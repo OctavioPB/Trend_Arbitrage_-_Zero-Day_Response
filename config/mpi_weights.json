@@ -1,0 +1,6 @@
+{
+  "volume": 0.4,
+  "velocity": 0.35,
+  "sentiment": 0.25,
+  "_comment": "Weights must sum to 1.0. Change here — no code deploy needed. Reload takes effect on next MPI calculation cycle."
+}
