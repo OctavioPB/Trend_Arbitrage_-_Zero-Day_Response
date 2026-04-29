@@ -1,4 +1,19 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useEffect } from 'react';
+
+// Inject @keyframes once into the document — not reproducible with inline styles
+const PULSE_STYLE_ID = 'heat-pulse-keyframes';
+function ensurePulseKeyframes() {
+  if (document.getElementById(PULSE_STYLE_ID)) return;
+  const style = document.createElement('style');
+  style.id = PULSE_STYLE_ID;
+  style.textContent = `
+    @keyframes heat-pulse {
+      0%, 100% { transform: scale(1);                    opacity: 1; }
+      50%       { transform: scale(var(--pulse-scale, 1)); opacity: 0.82; }
+    }
+  `;
+  document.head.appendChild(style);
+}
 
 // Viridis colormap — 10 stops [R, G, B]
 const VIRIDIS = [
@@ -29,6 +44,8 @@ function formatBucket(isoStr) {
 }
 
 export function HeatMap({ cells = [], topic_clusters = [], time_buckets = [] }) {
+  useEffect(() => { ensurePulseKeyframes(); }, []);
+
   // Build lookup: cluster → bucket_iso → { score, signal_count }
   const lookup = useMemo(() => {
     const map = {};
@@ -38,6 +55,23 @@ export function HeatMap({ cells = [], topic_clusters = [], time_buckets = [] }) 
     });
     return map;
   }, [cells]);
+
+  // Velocity per cluster: compare latest bucket count vs previous bucket count.
+  // Returns a value in [0, 1] where 1 = doubling or more of signal volume.
+  const clusterVelocity = useMemo(() => {
+    if (time_buckets.length < 2) return {};
+    const latestBucket = time_buckets[time_buckets.length - 1];
+    const prevBucket = time_buckets[time_buckets.length - 2];
+    const vel = {};
+    topic_clusters.forEach((cluster) => {
+      const latest = lookup[cluster]?.[latestBucket]?.signal_count ?? 0;
+      const prev = lookup[cluster]?.[prevBucket]?.signal_count ?? 0;
+      vel[cluster] = prev > 0
+        ? Math.min(Math.max((latest - prev) / prev, 0), 1)
+        : (latest > 0 ? 1 : 0);
+    });
+    return vel;
+  }, [lookup, topic_clusters, time_buckets]);
 
   if (!topic_clusters.length || !time_buckets.length) {
     return (
@@ -62,33 +96,48 @@ export function HeatMap({ cells = [], topic_clusters = [], time_buckets = [] }) 
             </tr>
           </thead>
           <tbody>
-            {topic_clusters.map((cluster) => (
-              <tr key={cluster}>
-                <td style={styles.rowLabel}>{cluster}</td>
-                {time_buckets.map((tb) => {
-                  const cell = lookup[cluster]?.[tb];
-                  return (
-                    <td
-                      key={tb}
-                      title={
-                        cell
-                          ? `${cluster} · ${formatBucket(tb)} · score ${cell.score.toFixed(3)} · ${cell.signal_count} signals`
-                          : 'No data'
-                      }
-                      style={{
-                        ...styles.cell,
-                        backgroundColor: cell ? scoreToRgb(cell.score) : '#E8EDF2',
-                        opacity: cell ? 1 : 0.35,
-                      }}
-                    >
-                      {cell && cell.signal_count > 0 && (
-                        <span style={styles.cellCount}>{cell.signal_count}</span>
-                      )}
-                    </td>
-                  );
-                })}
-              </tr>
-            ))}
+            {topic_clusters.map((cluster) => {
+              const vel = clusterVelocity[cluster] ?? 0;
+              const latestBucket = time_buckets[time_buckets.length - 1];
+              return (
+                <tr key={cluster}>
+                  <td style={styles.rowLabel}>{cluster}</td>
+                  {time_buckets.map((tb) => {
+                    const cell = lookup[cluster]?.[tb];
+                    const isLatest = tb === latestBucket;
+                    // Only pulse the latest bucket when there is real velocity
+                    const pulsing = isLatest && vel > 0.15;
+                    // scale: 0.15 vel → 1.05, 1.0 vel → 1.22
+                    const pulseScale = (1.05 + vel * 0.17).toFixed(3);
+                    // duration: high velocity → faster (0.6s); low velocity → slower (2s)
+                    const pulseDuration = `${Math.max(0.6, 2 - vel * 1.4).toFixed(2)}s`;
+                    return (
+                      <td
+                        key={tb}
+                        title={
+                          cell
+                            ? `${cluster} · ${formatBucket(tb)} · score ${cell.score.toFixed(3)} · ${cell.signal_count} signals${pulsing ? ` · ↑ ${(vel * 100).toFixed(0)}% velocity` : ''}`
+                            : 'No data'
+                        }
+                        style={{
+                          ...styles.cell,
+                          backgroundColor: cell ? scoreToRgb(cell.score) : '#E8EDF2',
+                          opacity: cell ? 1 : 0.35,
+                          '--pulse-scale': pulseScale,
+                          animation: pulsing
+                            ? `heat-pulse ${pulseDuration} ease-in-out infinite`
+                            : 'none',
+                        }}
+                      >
+                        {cell && cell.signal_count > 0 && (
+                          <span style={styles.cellCount}>{cell.signal_count}</span>
+                        )}
+                      </td>
+                    );
+                  })}
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
