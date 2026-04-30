@@ -193,12 +193,265 @@ All previous sprints complete.
 | 4 | Predictive Engine | MPI calculator + Golden Record generator | 1–2 weeks |
 | 5 | Backend API | FastAPI REST + WebSocket `/ws/heatmap` | 1 week |
 | 6 | Dashboard + E2E | React heat map + end-to-end pipeline validation | 1–2 weeks |
+| F1 | Alerting | Slack + webhook push when MPI crosses threshold | 1 week |
+| F2 | Historical Trends | TimescaleDB archive, baseline calibration, trend persistence | 1–2 weeks |
+| F3 | Ingestion Expansion | LinkedIn, NewsAPI, RSS feeds; source-weight config | 1–2 weeks |
+| F4 | Auth & API Security | JWT auth, API key management, rate limiting, RBAC | 1–2 weeks |
+| F5 | Ad Platform Integration | Push audiences to Google Ads + Meta | 2 weeks |
+| F6 | Playbook Engine | Rules-based automated actions triggered by Golden Records | 2 weeks |
+| F7 | Feedback Loop | Conversion tracking, threshold auto-calibration | 2 weeks |
+| F8 | Stream Processing | Replace Airflow batch with Kafka Streams (sub-30s latency) | 2–3 weeks |
 
-**Total estimated duration:** 7–10 weeks
+**Total estimated duration:** 7–10 weeks (v1) + 14–19 weeks (F1–F8)
 
 ---
 
-## Cross-Sprint Standards (Applies Throughout)
+---
+
+## Future Implementations (F1–F8)
+
+These sprints extend the v1 system into a production-grade, closed-loop marketing intelligence platform. Each is independent enough to be prioritized individually, but F4 → F5 → F6 → F7 must run in order.
+
+---
+
+## F1 — Real-time Alerting (Slack + Webhooks)
+
+**Goal:** Marketing teams are notified within 60 seconds of a Golden Record being generated — without requiring anyone to watch the dashboard.
+
+**Duration:** 1 week
+
+### Deliverables
+
+- `alerting/notifier.py` — `AlertNotifier` class with pluggable backends: `SlackBackend`, `WebhookBackend`, `EmailBackend` (SMTP)
+- `alerting/config.py` — alert rules: minimum MPI score, minimum signal count, per-topic suppression window (prevents duplicate alerts within N minutes)
+- `etl/dags/golden_record_dag.py` — updated to call `AlertNotifier.fire()` after each Golden Record write
+- `api/routers/alerts.py` — `POST /alerts/config` endpoint to update alert rules at runtime without a code deploy
+- `alembic/versions/002_alert_rules.py` — `alert_rules` table: `topic_cluster`, `min_mpi`, `suppression_minutes`, `channels` (JSONB)
+- Unit tests: `tests/unit/test_notifier.py` — mock all three backends; test suppression window, threshold filtering, payload shape
+
+### Acceptance Criteria
+
+- Slack message arrives within 60 seconds of a Golden Record write when MPI ≥ configured threshold
+- Duplicate alerts for the same topic cluster are suppressed for the configured window
+- Webhook payload matches a documented schema (topic, mpi_score, recommended_action, expires_at, dashboard_url)
+- Alert rules can be updated via the API endpoint without restarting any service
+- No API keys or DSNs appear in alert payloads or logs
+
+### Dependencies
+
+Sprint 6 complete (Golden Record pipeline running end-to-end).
+
+---
+
+## F2 — Historical Trend Memory (MPI Archive)
+
+**Goal:** MPI scores are persisted as a time series, enabling real historical baselines, week-over-week comparisons, and trend persistence detection — replacing the synthetic `baseline_avg_signals=10` placeholder.
+
+**Duration:** 1–2 weeks
+
+### Deliverables
+
+- `alembic/versions/003_mpi_history.py` — `mpi_history` table: `recorded_at TIMESTAMPTZ`, `topic_cluster TEXT`, `mpi_score NUMERIC(4,3)`, `signal_count INT`, `window_minutes INT`; hypertable if TimescaleDB is available, plain table otherwise
+- `predictive/mpi_archiver.py` — writes one row per topic cluster per MPI computation cycle; idempotent on `(recorded_at_bucket, topic_cluster)`
+- `predictive/mpi_calculator.py` — updated `calculate_mpi()` to read `baseline_avg_signals` from the 7-day rolling average in `mpi_history` instead of a hardcoded constant
+- `api/routers/history.py` — `GET /history/mpi?cluster=X&from_dt=Y&to_dt=Z` returning time-series MPI data; used by future analytics views
+- `etl/dags/golden_record_dag.py` — updated to call archiver after each MPI computation
+- Unit tests: `tests/unit/test_mpi_archiver.py` — idempotency, baseline fallback when history < 24h, response shape
+
+### Acceptance Criteria
+
+- Every MPI computation cycle writes one archive row per active topic cluster
+- After 7 days of data, `baseline_avg_signals` in `calculate_mpi()` is sourced from real history, not a constant
+- `GET /history/mpi` returns time-series data sortable by `recorded_at`
+- Inserting the same `(recorded_at_bucket, topic_cluster)` twice does not create a duplicate row
+- Dashboard heat map is unaffected — no breaking changes to `/mpi` or `/ws/heatmap`
+
+### Dependencies
+
+Sprint 6 complete.
+
+---
+
+## F3 — Ingestion Expansion (LinkedIn + News + RSS)
+
+**Goal:** Signal coverage expands beyond Reddit and Twitter to include professional networks, news aggregators, and competitor press release feeds — reducing blind spots in B2B market segments.
+
+**Duration:** 1–2 weeks
+
+### Deliverables
+
+- `ingestion/producers/linkedin_producer.py` — polls LinkedIn via RapidAPI (unofficial) for company posts and trending topics; falls back to RSS feed scraping if API quota is exhausted
+- `ingestion/producers/news_producer.py` — NewsAPI + GDELT integration; filters by competitor names, industry keywords, and configurable topic seed list
+- `ingestion/producers/rss_producer.py` — generic RSS/Atom feed consumer; target list in `config/rss_feeds.json`
+- `config/rss_feeds.json` — seed list of competitor blogs, industry publications, and job board RSS feeds (job postings as leading indicator)
+- `config/source_weights.json` — per-source signal weight applied during MPI calculation: `{"reddit": 1.0, "twitter": 0.9, "news": 1.2, "linkedin": 1.1, "rss": 0.7}`; readable by `mpi_calculator.py`
+- `ingestion/models.py` — `source` Literal extended to include `"linkedin"`, `"news"`, `"rss"`
+- `alembic/versions/004_source_weights.py` — adds `source_weight NUMERIC(3,2) DEFAULT 1.0` to `enriched_signals`
+- Unit tests: `tests/unit/test_news_producer.py` — schema validation, deduplication by URL hash, source weight propagation
+
+### Acceptance Criteria
+
+- All three new producers publish valid `RawEvent` JSON to `raw_signals` with correct `source` values
+- Source weight from `config/source_weights.json` is applied to the MPI volume score without code changes
+- Changing a weight in `source_weights.json` changes MPI output without a service restart
+- No duplicate events for the same URL across polling cycles
+- RSS feeds with invalid XML are caught and logged; the producer does not crash
+
+### Dependencies
+
+Sprint 2 complete (Kafka ingestion patterns established).
+
+---
+
+## F4 — Authentication & API Security
+
+**Goal:** The API is safe to expose outside the internal network. External consumers (ad platforms, BI tools) can authenticate with scoped API keys. The dashboard requires login.
+
+**Duration:** 1–2 weeks
+
+### Deliverables
+
+- `api/auth.py` — JWT token issuance and validation via `python-jose`; `APIKeyHeader` dependency for machine-to-machine consumers; `OAuth2PasswordBearer` for dashboard login
+- `alembic/versions/005_api_keys.py` — `api_keys` table: `key_hash TEXT`, `owner TEXT`, `scopes TEXT[]` (`read:signals`, `read:segments`, `write:alerts`), `created_at`, `expires_at`, `last_used_at`
+- `api/routers/auth.py` — `POST /auth/token` (user login), `POST /auth/keys` (generate API key), `DELETE /auth/keys/{id}` (revoke)
+- `api/middleware/rate_limit.py` — token-bucket rate limiter backed by Redis; configurable per-scope limits via environment variable
+- `dashboard/src/` — login page (`LoginPage.jsx`), token storage in `sessionStorage`, `Authorization: Bearer` header on all fetch calls, redirect to login on 401
+- Unit tests: `tests/unit/test_auth.py` — token expiry, scope enforcement, rate limit exhaustion, key revocation
+
+### Acceptance Criteria
+
+- All `/signals`, `/mpi`, `/segments` endpoints return 401 without a valid token or API key
+- API keys are stored as bcrypt hashes — the plain key is shown only once at creation
+- Rate limit returns 429 with `Retry-After` header; limit resets correctly after the window
+- Scoped API key with `read:signals` cannot call `POST /alerts/config`
+- The dashboard redirects to the login page on session expiry without crashing
+
+### Dependencies
+
+Sprint 6 complete.
+
+---
+
+## F5 — Ad Platform Integration (Google Ads + Meta)
+
+**Goal:** Golden Records automatically push audience definitions to Google Ads customer match and Meta custom audiences, converting intelligence into live campaign adjustments within minutes of a signal spike.
+
+**Duration:** 2 weeks
+
+### Deliverables
+
+- `integrations/google_ads.py` — `GoogleAdsAudienceSync`: reads a Golden Record's `audience_proxy`, maps `top_topics` to keyword lists, updates or creates a Google Ads Customer Match list via `google-ads` Python client
+- `integrations/meta_ads.py` — `MetaAudienceSync`: reads `audience_proxy.handles`, creates or updates a Meta Custom Audience via the Marketing API
+- `integrations/audience_mapper.py` — translates `audience_proxy` JSONB (subreddits, handles, site sections) to platform-specific audience specs; configurable keyword expansion via `config/audience_mapping.json`
+- `config/audience_mapping.json` — maps topic clusters to seed keyword lists per platform
+- `etl/dags/golden_record_dag.py` — updated to call both sync functions after each Golden Record write (non-blocking; failures do not roll back the record)
+- `alembic/versions/006_audience_sync_log.py` — `audience_sync_log` table: `golden_record_id`, `platform`, `status`, `audience_id`, `synced_at`, `error_message`
+- Integration tests: `tests/integration/test_ad_platforms.py` — mock both platform APIs; verify payload shape, retry on 429, sync log write on success and failure
+
+### Acceptance Criteria
+
+- A Golden Record with `audience_proxy` containing at least one subreddit or handle triggers audience sync within 90 seconds
+- Platform API failures are logged to `audience_sync_log` with `status=error` and do not crash the DAG
+- The same Golden Record does not push duplicate audiences to the same platform (idempotent by `golden_record_id + platform`)
+- Audience sync can be disabled per platform via environment variable without code changes
+- No ad platform credentials appear in logs or the sync log table
+
+### Dependencies
+
+F4 complete (API security hardened before external integrations). Sprint 4 complete.
+
+---
+
+## F6 — Automated Playbook Engine
+
+**Goal:** When a Golden Record fires above a configurable confidence level, the system executes a pre-defined playbook automatically — no human in the loop required for high-confidence, low-risk actions.
+
+**Duration:** 2 weeks
+
+### Deliverables
+
+- `playbooks/engine.py` — `PlaybookEngine`: evaluates trigger conditions against a Golden Record, selects matching playbooks, executes action steps sequentially; supports dry-run mode
+- `playbooks/actions/` — action implementations:
+  - `bid_adjustment.py` — increase Google Ads max CPC by configured percentage
+  - `content_brief.py` — POST to a configured webhook with a structured content brief (topic, angle, urgency, audience)
+  - `slack_escalation.py` — pages a human for review when MPI > 0.9 (high-confidence, escalation rather than automation)
+- `config/playbooks.json` — playbook definitions: trigger conditions (`min_mpi`, `topic_cluster_pattern`, `urgency`), action list, cooldown window
+- `alembic/versions/007_playbook_runs.py` — `playbook_runs` table: `golden_record_id`, `playbook_name`, `actions_taken` (JSONB), `dry_run BOOL`, `status`, `started_at`, `completed_at`
+- `api/routers/playbooks.py` — `GET /playbooks` (list), `POST /playbooks/test` (dry-run against a synthetic Golden Record), `GET /playbooks/runs` (execution history)
+- Unit tests: `tests/unit/test_playbook_engine.py` — trigger matching, dry-run no-ops, cooldown enforcement, partial failure handling
+
+### Acceptance Criteria
+
+- A Golden Record matching a playbook trigger executes its actions within 30 seconds of the record being written
+- Dry-run mode executes the full evaluation and logs intended actions without calling external APIs
+- Cooldown window prevents the same playbook from firing more than once per cluster per configured interval
+- A failure in one action step is logged and does not block subsequent steps
+- Playbook definitions can be changed in `config/playbooks.json` without restarting any service
+
+### Dependencies
+
+F5 complete (ad platform integration provides the action targets). F1 complete (alerting provides the Slack escalation path).
+
+---
+
+## F7 — Performance Feedback Loop
+
+**Goal:** The system measures whether Golden Records led to business outcomes (CTR lift, conversion increase) and uses that signal to auto-calibrate `MPI_THRESHOLD` and source weights — closing the intelligence loop.
+
+**Duration:** 2 weeks
+
+### Deliverables
+
+- `alembic/versions/008_performance_events.py` — `performance_events` table: `golden_record_id`, `platform`, `metric` (`ctr`, `conversions`, `impression_share`), `value NUMERIC`, `measured_at`, `measurement_window_hours`
+- `integrations/performance_collector.py` — polls Google Ads and Meta for campaign performance metrics linked to audiences created by F5; writes to `performance_events`
+- `predictive/threshold_calibrator.py` — computes precision/recall of Golden Records over a rolling 30-day window; suggests updated `MPI_THRESHOLD` and `source_weights` when statistical significance is reached (minimum 30 samples)
+- `etl/dags/calibration_dag.py` — weekly DAG that runs `threshold_calibrator.py` and writes suggested config changes to a `calibration_proposals` table for human review before applying
+- `api/routers/performance.py` — `GET /performance/summary` (Golden Record hit rate, avg CTR lift by cluster), `POST /performance/apply-proposal/{id}` (apply a calibration proposal)
+- `dashboard/src/components/PerformancePanel.jsx` — sidebar panel showing Golden Record hit rate (% that produced measurable CTR lift), top performing clusters, and pending calibration proposals
+
+### Acceptance Criteria
+
+- Performance metrics are collected within 24 hours of an audience sync (F5 prerequisite)
+- `threshold_calibrator.py` produces no suggestion until 30+ Golden Records have measured outcomes
+- Calibration proposals require explicit human approval via `POST /performance/apply-proposal/{id}` — no auto-apply
+- Golden Record "hit rate" (outcome positive / total issued) is visible in the dashboard
+- The feedback loop cannot lower `MPI_THRESHOLD` below 0.5 or raise it above 0.95 regardless of calibration output (safety bounds)
+
+### Dependencies
+
+F5 complete (audience sync creates the measurement anchor). F2 complete (historical data needed for baseline comparison).
+
+---
+
+## F8 — Stream Processing Upgrade (Kafka Streams)
+
+**Goal:** Replace the 5-minute Airflow batch enrichment with a Kafka Streams consumer for sub-30-second signal classification, closing the gap between ingestion and actionable intelligence.
+
+**Duration:** 2–3 weeks
+
+### Deliverables
+
+- `streaming/classifier_stream.py` — `ClassifierStream`: Kafka Streams-style consumer using `kafka-python` + `asyncio`; consumes `raw_signals`, classifies in micro-batches of 5 (not 20 — lower latency), writes to `enriched_signals` topic and DB within 30 seconds of ingestion
+- `streaming/mpi_stream.py` — `MPIStream`: maintains an in-memory rolling window of enriched signals per topic cluster; recomputes MPI on every new signal; publishes `mpi_update` events to a new Kafka topic when MPI changes by > 0.05
+- `streaming/golden_record_stream.py` — `GoldenRecordStream`: listens to `mpi_update` topic; triggers Golden Record generation when MPI crosses threshold; replaces the 5-minute polling in `threshold_monitor.py`
+- `config/streaming.json` — tunable parameters: micro-batch size, MPI recompute debounce (ms), rolling window size, max in-flight LLM requests
+- `docker-compose.yml` — updated with `streaming-classifier`, `streaming-mpi`, `streaming-golden-record` services; Airflow DAGs kept as fallback (configurable via `ENRICHMENT_MODE=streaming|batch`)
+- `alembic/versions/009_stream_offsets.py` — `kafka_stream_offsets` table for exactly-once semantics (consumer group + partition + offset)
+- Integration tests: `tests/integration/test_classifier_stream.py` — end-to-end: produce to `raw_signals`, assert enriched signal in DB within 30 seconds
+
+### Acceptance Criteria
+
+- A raw signal produced to `raw_signals` appears as an enriched signal in the DB within 30 seconds under normal load
+- MPI is recomputed within 5 seconds of a new enriched signal arriving for an active topic cluster
+- `ENRICHMENT_MODE=batch` falls back to the Airflow DAG path with no code changes to the DAG
+- Restarting the streaming service resumes from the last committed Kafka offset — no signal is processed twice
+- LLM API rate limits (429) apply the same exponential backoff as the batch path; the consumer does not crash
+
+### Dependencies
+
+Sprint 3 complete (batch path validated and understood). F2 complete (historical baseline used by the MPI stream).
+
+---
 
 - Python 3.11+; `ruff` for linting, `black` for formatting, type hints on all public functions
 - All PostgreSQL schema changes via `alembic` migrations — no manual `ALTER TABLE`
