@@ -1,12 +1,15 @@
 """Golden record DAG — runs every 5 minutes.
 
 Pipeline:
-  compute_mpi → generate_golden_records → fire_alerts
+  compute_mpi → archive_mpi → generate_golden_records → fire_alerts
 
-For each topic cluster where MPI >= MPI_THRESHOLD:
-  - Writes a golden_records row to PostgreSQL (with velocity-based expires_at)
-  - Publishes a golden_record_ready event to Kafka
-  - Fires alert notifications to all matching alert rules (Slack, webhook, email)
+For each MPI computation cycle:
+  - compute_mpi computes MPI for ALL active topic clusters and returns
+    both the full results list and the triggered (above-threshold) subset.
+  - archive_mpi persists all results to mpi_history (idempotent upsert).
+  - generate_golden_records writes golden_records rows and publishes to Kafka
+    for triggered clusters only.
+  - fire_alerts dispatches Slack/webhook/email notifications via alert rules.
 """
 
 import logging
@@ -38,17 +41,49 @@ _DEFAULT_ARGS = {
 def golden_record_dag() -> None:
 
     @task()
-    def compute_mpi() -> list[dict]:
-        """Query enriched_signals, compute MPI per cluster, return triggered clusters."""
-        from predictive.threshold_monitor import get_triggered_clusters
+    def compute_mpi() -> dict:
+        """Compute MPI for all active clusters.
 
-        triggered = get_triggered_clusters()
-        logger.info("compute_mpi: %d cluster(s) above threshold", len(triggered))
-        return triggered
+        Returns dict with:
+          all_results: list of MPIResult dicts for every cluster computed
+          triggered:   subset where mpi_score >= MPI_THRESHOLD
+        """
+        import os
+
+        from predictive.threshold_monitor import (
+            MPI_THRESHOLD,
+            SIGNAL_WINDOW_MINUTES,
+            compute_all_mpi,
+        )
+
+        all_results = compute_all_mpi(window_minutes=SIGNAL_WINDOW_MINUTES)
+        threshold = float(os.environ.get("MPI_THRESHOLD", str(MPI_THRESHOLD)))
+        triggered = [r for r in all_results if r["mpi_score"] >= threshold]
+
+        logger.info(
+            "compute_mpi: %d total cluster(s), %d triggered",
+            len(all_results),
+            len(triggered),
+        )
+        return {"all_results": all_results, "triggered": triggered}
 
     @task()
-    def generate_golden_records(triggered_clusters: list[dict]) -> list[dict]:
+    def archive_mpi(mpi_output: dict) -> None:
+        """Persist all cluster MPI scores to mpi_history (idempotent upsert)."""
+        all_results = mpi_output.get("all_results") or []
+        if not all_results:
+            logger.info("archive_mpi: no results to persist")
+            return
+
+        from predictive.mpi_archiver import archive_results
+
+        written = archive_results(all_results)
+        logger.info("archive_mpi: wrote %d row(s) to mpi_history", written)
+
+    @task()
+    def generate_golden_records(mpi_output: dict) -> list[dict]:
         """Generate and persist a golden record for each triggered cluster."""
+        triggered_clusters = mpi_output.get("triggered") or []
         if not triggered_clusters:
             logger.info("No clusters above threshold — nothing to generate")
             return []
@@ -94,8 +129,9 @@ def golden_record_dag() -> None:
                     exc,
                 )
 
-    triggered = compute_mpi()
-    records = generate_golden_records(triggered)
+    mpi_output = compute_mpi()
+    archive_mpi(mpi_output)
+    records = generate_golden_records(mpi_output)
     fire_alerts(records)
 
 

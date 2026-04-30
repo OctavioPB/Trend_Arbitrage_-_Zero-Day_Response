@@ -1,5 +1,14 @@
 """Threshold monitor — queries enriched signals, computes MPI per cluster,
 and returns clusters that crossed MPI_THRESHOLD.
+
+Public API:
+    compute_all_mpi(window_minutes, dsn) → list[dict]
+        MPI results for every active cluster, regardless of threshold.
+        Used by the archiver to record full history.
+
+    get_triggered_clusters(window_minutes, threshold) → list[dict]
+        Subset of compute_all_mpi results that crossed the threshold.
+        Used by the golden-record DAG task.
 """
 
 from __future__ import annotations
@@ -11,6 +20,7 @@ from datetime import datetime, timedelta, timezone
 import psycopg2
 import psycopg2.extras
 
+from predictive.mpi_archiver import get_baseline
 from predictive.mpi_calculator import MPIResult, calculate_mpi
 
 logger = logging.getLogger(__name__)
@@ -19,16 +29,24 @@ MPI_THRESHOLD: float = float(os.environ.get("MPI_THRESHOLD", "0.72"))
 SIGNAL_WINDOW_MINUTES: int = int(os.environ.get("SIGNAL_WINDOW_MINUTES", "60"))
 MIN_SIGNALS_FOR_CLUSTER: int = 3  # skip clusters with fewer signals
 
+_DSN_DEFAULT = "postgresql://trend:trend@localhost:5432/trend_arbitrage"
 
-def get_triggered_clusters(
+
+def compute_all_mpi(
     window_minutes: int = SIGNAL_WINDOW_MINUTES,
-    threshold: float = MPI_THRESHOLD,
+    dsn: str | None = None,
 ) -> list[dict]:
-    """Return MPI result dicts for clusters that crossed the threshold.
+    """Compute MPI for every active topic cluster in the rolling window.
 
-    Each dict is the JSON-serialized MPIResult — ready for Airflow XCom.
+    Baseline for each cluster is sourced from the 7-day mpi_history average
+    (see mpi_archiver.get_baseline). Falls back to 10.0 for new clusters
+    with < 1 hour of recorded history.
+
+    Returns:
+        List of JSON-serialized MPIResult dicts (all clusters, all scores).
+        Empty list if no signals exist in the window.
     """
-    dsn = os.environ.get("POSTGRES_DSN", "postgresql://trend:trend@localhost:5432/trend_arbitrage")
+    dsn = dsn or os.environ.get("POSTGRES_DSN", _DSN_DEFAULT)
 
     signals = _fetch_signals(dsn, window_minutes)
     if not signals:
@@ -36,35 +54,52 @@ def get_triggered_clusters(
         return []
 
     clusters = _group_by_topic(signals)
-    baseline = _compute_global_baseline(dsn, window_minutes)
 
-    triggered: list[dict] = []
+    results: list[dict] = []
     for topic, cluster_signals in clusters.items():
         if len(cluster_signals) < MIN_SIGNALS_FOR_CLUSTER:
             continue
 
+        baseline = get_baseline(dsn, topic, window_minutes)
         result = calculate_mpi(
             signals=cluster_signals,
             topic_cluster=topic,
             baseline_avg_signals=baseline,
             window_minutes=window_minutes,
         )
-        if result.mpi_score >= threshold:
-            logger.info(
-                "Threshold crossed: cluster=%r mpi=%.3f threshold=%.3f signals=%d",
-                topic,
-                result.mpi_score,
-                threshold,
-                result.signal_count,
-            )
-            triggered.append(result.model_dump(mode="json"))
+        results.append(result.model_dump(mode="json"))
+
+    logger.info("compute_all_mpi: %d active cluster(s) computed", len(results))
+    return results
+
+
+def get_triggered_clusters(
+    window_minutes: int = SIGNAL_WINDOW_MINUTES,
+    threshold: float = MPI_THRESHOLD,
+    dsn: str | None = None,
+) -> list[dict]:
+    """Return MPI result dicts for clusters that crossed the threshold.
+
+    Delegates to compute_all_mpi and filters by threshold.
+    Each dict is the JSON-serialized MPIResult — ready for Airflow XCom.
+    """
+    all_results = compute_all_mpi(window_minutes=window_minutes, dsn=dsn)
+
+    triggered = [r for r in all_results if r["mpi_score"] >= threshold]
 
     logger.info(
-        "%d/%d clusters crossed threshold=%.3f",
+        "%d/%d cluster(s) crossed threshold=%.3f",
         len(triggered),
-        len(clusters),
+        len(all_results),
         threshold,
     )
+    for r in triggered:
+        logger.info(
+            "Threshold crossed: cluster=%r mpi=%.3f signals=%d",
+            r["topic_cluster"],
+            r["mpi_score"],
+            r["signal_count"],
+        )
     return triggered
 
 
@@ -100,7 +135,7 @@ def _normalize_row(row: dict) -> dict:
         "engagement_score": float(row["engagement_score"] or 0.0),
         "topic_tags": row["topic_tags"] or [],
         "author": row.get("author") or "",
-        "metadata": {},  # not stored in DB; entity_extractor falls back to URL parsing
+        "metadata": {},
     }
 
 
@@ -112,30 +147,3 @@ def _group_by_topic(signals: list[dict]) -> dict[str, list[dict]]:
         key = tags[0].lower().strip() if tags else "__untagged__"
         clusters.setdefault(key, []).append(s)
     return clusters
-
-
-def _compute_global_baseline(dsn: str, window_minutes: int) -> float:
-    """Average signal count per equivalent window over the past 24 hours."""
-    sql = """
-        SELECT COALESCE(AVG(bucket_count), 0) AS avg_count
-        FROM (
-            SELECT
-                date_trunc('hour', collected_at) AS bucket,
-                COUNT(*) AS bucket_count
-            FROM enriched_signals
-            WHERE collected_at >= NOW() - INTERVAL '24 hours'
-              AND category IN ('opportunity', 'threat')
-            GROUP BY bucket
-        ) hourly
-    """
-    try:
-        with psycopg2.connect(dsn) as conn:
-            with conn.cursor() as cur:
-                cur.execute(sql)
-                row = cur.fetchone()
-        baseline = float(row[0]) if row and row[0] else 10.0
-    except psycopg2.OperationalError as exc:
-        logger.warning("Could not compute baseline (DB error: %s) — using default 10.0", exc)
-        baseline = 10.0
-
-    return max(baseline, 1.0)  # never divide by zero in volume_score
