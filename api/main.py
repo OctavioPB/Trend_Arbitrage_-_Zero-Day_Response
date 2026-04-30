@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from api.db import close_pool
-from api.routers import mpi, segments, signals
+from api.routers import alerts, mpi, segments, signals
 
 logger = logging.getLogger(__name__)
 
@@ -32,13 +32,14 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # tighten in production
-    allow_methods=["GET"],
+    allow_methods=["GET", "POST", "DELETE"],
     allow_headers=["*"],
 )
 
 app.include_router(signals.router)
 app.include_router(mpi.router)
 app.include_router(segments.router)
+app.include_router(alerts.router)
 
 
 # ── health ────────────────────────────────────────────────────────────────────

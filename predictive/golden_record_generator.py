@@ -32,14 +32,15 @@ _BASE_TTL_HOURS = 8.0   # TTL when velocity_score = 0.0 (slow-moving trend)
 _MIN_TTL_HOURS = 1.0    # TTL when velocity_score = 1.0 (viral, saturates fast)
 
 
-def generate_and_persist(mpi_result_dict: dict) -> str:
+def generate_and_persist(mpi_result_dict: dict) -> dict:
     """Generate a golden record for the triggered cluster, write to DB, publish to Kafka.
 
     Args:
         mpi_result_dict: JSON-serialized MPIResult dict (from threshold_monitor).
 
     Returns:
-        UUID string of the created golden record.
+        Dict with id, topic_cluster, mpi_score, signal_count, recommended_action,
+        expires_at (ISO string), audience_proxy — ready to pass to AlertNotifier.fire().
     """
     dsn = os.environ.get("POSTGRES_DSN", "postgresql://trend:trend@localhost:5432/trend_arbitrage")
     now = datetime.now(tz=timezone.utc)
@@ -80,7 +81,15 @@ def generate_and_persist(mpi_result_dict: dict) -> str:
         mpi_score,
         expires_at.isoformat(),
     )
-    return record_id
+    return {
+        "id": record_id,
+        "topic_cluster": topic_cluster,
+        "mpi_score": mpi_score,
+        "signal_count": signal_count,
+        "recommended_action": recommended_action,
+        "expires_at": expires_at.isoformat(),
+        "audience_proxy": audience_proxy,
+    }
 
 
 def _compute_expires_at(velocity_score: float, now: datetime) -> datetime:
