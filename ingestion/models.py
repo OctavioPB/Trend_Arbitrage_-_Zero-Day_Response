@@ -13,7 +13,7 @@ class RawEvent(BaseModel):
     """Single raw signal published to the raw_signals Kafka topic."""
 
     event_id: str
-    source: Literal["reddit", "twitter", "scraper"]
+    source: Literal["reddit", "twitter", "scraper", "linkedin", "news", "rss"]
     collected_at: datetime
     raw_text: str
     url: str

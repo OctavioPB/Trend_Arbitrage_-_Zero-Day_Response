@@ -1,0 +1,9 @@
+{
+  "_comment": "Per-source signal weight multipliers applied to the MPI volume score. Change values here — no restart or code deploy needed. The calculator reloads this file on every computation cycle.",
+  "reddit":   1.0,
+  "twitter":  0.9,
+  "news":     1.2,
+  "linkedin": 1.1,
+  "rss":      0.7,
+  "scraper":  0.8
+}

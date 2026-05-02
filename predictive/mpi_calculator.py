@@ -3,12 +3,13 @@
 Formula (weights configurable via config/mpi_weights.json):
     MPI = volume * 0.4 + velocity * 0.35 + sentiment * 0.25
 
-    volume_score    = signals_in_window / baseline_avg_signals          [clamped 0–1]
+    volume_score    = weighted_signal_count / baseline_avg_signals      [clamped 0–1]
     velocity_score  = (signals_last_15min / signals_prev_15min) - 1     [clamped 0–1]
     sentiment_score = proportion of 'positive' signals in window        [0–1]
 
-Weights are reloaded from disk on every call so changes take effect
-without a restart.
+    weighted_signal_count = Σ source_weight[s["source"]] for each signal s
+    Source weights are loaded from config/source_weights.json (default 1.0 for
+    unknown sources). Both weight files are reloaded on every call.
 """
 
 from __future__ import annotations
@@ -25,6 +26,7 @@ from pydantic import BaseModel, Field
 logger = logging.getLogger(__name__)
 
 _WEIGHTS_PATH = Path(os.environ.get("MPI_WEIGHTS_PATH", "config/mpi_weights.json"))
+_SOURCE_WEIGHTS_PATH = Path(os.environ.get("SOURCE_WEIGHTS_PATH", "config/source_weights.json"))
 _VELOCITY_WINDOW_MINUTES = 15
 _MIN_SIGNALS = 1  # clusters below this skip velocity (not enough data)
 
@@ -38,13 +40,15 @@ class MPIResult(BaseModel):
     velocity_score: float = Field(ge=0.0, le=1.0)
     sentiment_score: float = Field(ge=0.0, le=1.0)
     signal_count: int
+    weighted_signal_count: float
     baseline_avg_signals: float
     weights: dict[str, float]
+    source_weights: dict[str, float]
     computed_at: datetime
 
 
 def load_weights() -> dict[str, float]:
-    """Load MPI weights from config/mpi_weights.json.
+    """Load MPI component weights from config/mpi_weights.json.
 
     Reloads from disk on every call — weight changes take effect immediately.
     """
@@ -65,6 +69,24 @@ def load_weights() -> dict[str, float]:
     return weights
 
 
+def load_source_weights() -> dict[str, float]:
+    """Load per-source signal weight multipliers from config/source_weights.json.
+
+    Reloads from disk on every call — changing source_weights.json takes
+    effect on the next MPI computation cycle without a restart.
+    Unknown sources get weight 1.0 at computation time (not stored here).
+    """
+    try:
+        raw = json.loads(_SOURCE_WEIGHTS_PATH.read_text(encoding="utf-8"))
+        return {k: float(v) for k, v in raw.items() if not k.startswith("_")}
+    except FileNotFoundError:
+        logger.warning("%s not found — all source weights default to 1.0", _SOURCE_WEIGHTS_PATH)
+        return {}
+    except (json.JSONDecodeError, ValueError) as exc:
+        logger.error("Invalid source_weights file: %s — all weights default to 1.0", exc)
+        return {}
+
+
 def calculate_mpi(
     signals: list[dict],
     topic_cluster: str = "",
@@ -72,6 +94,7 @@ def calculate_mpi(
     window_minutes: int = 60,
     now: datetime | None = None,
     weights: dict[str, float] | None = None,
+    source_weights: dict[str, float] | None = None,
 ) -> MPIResult:
     """Compute the Market Pressure Index for a list of enriched signal dicts.
 
@@ -79,13 +102,15 @@ def calculate_mpi(
         signals:              Enriched signal dicts in the rolling window.
                               Each dict must have 'collected_at' (datetime or ISO str)
                               and 'sentiment' ('positive'|'negative'|'neutral').
+                              'source' is used for weighting (default 1.0 if absent).
         topic_cluster:        Label for the cluster (for logging/result).
-        baseline_avg_signals: Average signals per equivalent window (historical).
+        baseline_avg_signals: Average weighted signal count per equivalent window.
                               Used to compute volume_score. Must be >= 0.
         window_minutes:       Width of the rolling window in minutes.
         now:                  Reference time (defaults to utcnow). Pass a fixed value
                               in tests to avoid flakiness.
-        weights:              Override weights dict. If None, loads from disk.
+        weights:              Override MPI component weights. If None, loads from disk.
+        source_weights:       Override source weight multipliers. If None, loads from disk.
 
     Returns:
         MPIResult with all component scores clamped to [0.0, 1.0].
@@ -94,6 +119,8 @@ def calculate_mpi(
         now = datetime.now(tz=timezone.utc)
     if weights is None:
         weights = load_weights()
+    if source_weights is None:
+        source_weights = load_source_weights()
 
     w_vol = weights.get("volume", 0.4)
     w_vel = weights.get("velocity", 0.35)
@@ -102,7 +129,7 @@ def calculate_mpi(
     # Normalize collected_at to tz-aware datetimes
     normalized = _normalize_signals(signals, now, window_minutes)
 
-    volume_score = _compute_volume(len(normalized), baseline_avg_signals)
+    volume_score, weighted_count = _compute_volume(normalized, baseline_avg_signals, source_weights)
     velocity_score = _compute_velocity(normalized, now)
     sentiment_score = _compute_sentiment(normalized)
 
@@ -111,13 +138,14 @@ def calculate_mpi(
 
     logger.info(
         "MPI cluster=%r score=%.3f volume=%.3f velocity=%.3f sentiment=%.3f "
-        "signals=%d baseline=%.1f",
+        "signals=%d weighted=%.1f baseline=%.1f",
         topic_cluster,
         mpi,
         volume_score,
         velocity_score,
         sentiment_score,
         len(normalized),
+        weighted_count,
         baseline_avg_signals,
     )
 
@@ -128,8 +156,10 @@ def calculate_mpi(
         velocity_score=round(velocity_score, 3),
         sentiment_score=round(sentiment_score, 3),
         signal_count=len(normalized),
+        weighted_signal_count=round(weighted_count, 3),
         baseline_avg_signals=baseline_avg_signals,
         weights=weights,
+        source_weights=source_weights,
         computed_at=now,
     )
 
@@ -165,10 +195,24 @@ def _normalize_signals(
     return result
 
 
-def _compute_volume(signal_count: int, baseline: float) -> float:
+def _compute_volume(
+    signals: list[dict],
+    baseline: float,
+    source_weights: dict[str, float],
+) -> tuple[float, float]:
+    """Return (volume_score, weighted_count).
+
+    weighted_count = Σ source_weights.get(s["source"], 1.0) for s in signals.
+    Unknown sources default to weight 1.0 so they are never silently dropped.
+    """
+    weighted_count = sum(
+        source_weights.get(str(s.get("source", "")), 1.0) for s in signals
+    )
     if baseline <= 0:
-        return 1.0 if signal_count > 0 else 0.0
-    return min(signal_count / baseline, 1.0)
+        score = 1.0 if weighted_count > 0 else 0.0
+    else:
+        score = min(weighted_count / baseline, 1.0)
+    return score, weighted_count
 
 
 def _compute_velocity(signals: list[dict], now: datetime) -> float:

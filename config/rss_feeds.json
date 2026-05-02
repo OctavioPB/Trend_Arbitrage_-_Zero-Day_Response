@@ -1,0 +1,17 @@
+{
+  "_comment": "RSS/Atom feeds polled by rss_producer. Edit here — no restart required. Each feed requires url and label; category is used for topic tagging.",
+  "feeds": [
+    {"url": "https://techcrunch.com/feed/",               "label": "techcrunch",        "category": "tech_news"},
+    {"url": "https://venturebeat.com/feed/",              "label": "venturebeat",        "category": "tech_news"},
+    {"url": "https://feeds.feedburner.com/Readwrite",     "label": "readwrite",          "category": "tech_news"},
+    {"url": "https://stackoverflow.blog/feed/",           "label": "stackoverflow_blog", "category": "tech_news"},
+    {"url": "https://github.blog/feed/",                  "label": "github_blog",        "category": "tech_news"},
+    {"url": "https://www.adweek.com/feed/",               "label": "adweek",             "category": "marketing"},
+    {"url": "https://www.marketingweek.com/feed/",        "label": "marketingweek",      "category": "marketing"},
+    {"url": "https://feeds.feedburner.com/MarketingProfs","label": "marketingprofs",     "category": "marketing"},
+    {"url": "https://www.businessinsider.com/rss",        "label": "businessinsider",    "category": "business"},
+    {"url": "https://feeds.a.dj.com/rss/RSSMarketsMain.xml", "label": "wsj_markets",    "category": "finance"},
+    {"url": "https://feeds.bloomberg.com/markets/news.rss",   "label": "bloomberg",      "category": "finance"},
+    {"url": "https://www.emarketer.com/rss/articles",     "label": "emarketer",          "category": "marketing"}
+  ]
+}
