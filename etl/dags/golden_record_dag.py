@@ -1,7 +1,7 @@
 """Golden record DAG — runs every 5 minutes.
 
 Pipeline:
-  compute_mpi → archive_mpi → generate_golden_records → fire_alerts
+  compute_mpi → archive_mpi → generate_golden_records → fire_alerts → sync_audiences
 
 For each MPI computation cycle:
   - compute_mpi computes MPI for ALL active topic clusters and returns
@@ -10,6 +10,8 @@ For each MPI computation cycle:
   - generate_golden_records writes golden_records rows and publishes to Kafka
     for triggered clusters only.
   - fire_alerts dispatches Slack/webhook/email notifications via alert rules.
+  - sync_audiences pushes audience definitions to Google Ads and Meta.
+    Platform failures are logged to audience_sync_log and do not crash the DAG.
 """
 
 import logging
@@ -129,10 +131,82 @@ def golden_record_dag() -> None:
                     exc,
                 )
 
+    @task()
+    def sync_audiences(golden_records: list[dict]) -> None:
+        """Push each golden record's audience to Google Ads and Meta.
+
+        Platform failures are caught, logged to audience_sync_log with
+        status='error', and do not raise — so one failing platform never
+        blocks the other or rolls back the golden record.
+        """
+        if not golden_records:
+            return
+
+        import os
+
+        import psycopg2
+
+        from integrations._sync_log import already_synced, write_sync_log
+        from integrations.audience_mapper import load_mapping, map_audience
+        from integrations.google_ads import GoogleAdsAudienceSync
+        from integrations.meta_ads import MetaAudienceSync
+
+        dsn = os.environ.get(
+            "POSTGRES_DSN", "postgresql://trend:trend@localhost:5432/trend_arbitrage"
+        )
+        mapping = load_mapping()
+        google_sync = GoogleAdsAudienceSync()
+        meta_sync = MetaAudienceSync()
+
+        with psycopg2.connect(dsn) as conn:
+            for record in golden_records:
+                record_id: str = record.get("id", "")
+                if not record_id:
+                    logger.warning("sync_audiences: skipping record with no id")
+                    continue
+
+                audience_proxy = record.get("audience_proxy") or {}
+                topic_cluster = record.get("topic_cluster", "")
+                spec = map_audience(audience_proxy, topic_cluster, mapping)
+
+                _sync_one_platform(conn, record_id, "google_ads", google_sync, spec)
+                _sync_one_platform(conn, record_id, "meta", meta_sync, spec)
+
+    def _sync_one_platform(conn, record_id: str, platform: str, syncer, spec) -> None:
+        """Attempt a single platform sync and write the result to audience_sync_log."""
+        from integrations._sync_log import already_synced, write_sync_log
+
+        if already_synced(conn, record_id, platform):
+            logger.info(
+                "sync_audiences: %s already synced for golden_record_id=%s — skipping",
+                platform,
+                record_id,
+            )
+            return
+
+        try:
+            audience_id = syncer.sync(record_id, spec)
+            if audience_id is None:
+                # Sync returned None → platform disabled
+                write_sync_log(conn, record_id, platform, "skipped")
+            else:
+                write_sync_log(conn, record_id, platform, "success", audience_id=audience_id)
+        except Exception as exc:  # noqa: BLE001
+            logger.error(
+                "sync_audiences: %s failed for golden_record_id=%s: %s",
+                platform,
+                record_id,
+                exc,
+            )
+            write_sync_log(conn, record_id, platform, "error", error_message=str(exc))
+        finally:
+            conn.commit()
+
     mpi_output = compute_mpi()
     archive_mpi(mpi_output)
     records = generate_golden_records(mpi_output)
     fire_alerts(records)
+    sync_audiences(records)
 
 
 golden_record_dag()

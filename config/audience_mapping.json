@@ -1,0 +1,39 @@
+{
+  "_comment": "Maps topic clusters to platform-specific keyword expansions. '_default' is used when no explicit mapping exists for a cluster.",
+  "_default": {
+    "google_ads_keywords": ["trending topic", "emerging market", "business opportunity"],
+    "meta_interests": ["Business trends", "Marketing", "Industry news"]
+  },
+  "ai-chips": {
+    "google_ads_keywords": ["AI chips", "GPU computing", "NVIDIA", "semiconductor", "AI hardware", "machine learning chips", "TPU"],
+    "meta_interests": ["Artificial intelligence", "NVIDIA", "Semiconductor industry", "Machine learning"]
+  },
+  "generative-ai": {
+    "google_ads_keywords": ["generative AI", "ChatGPT", "large language models", "AI content creation", "LLM", "GPT-4"],
+    "meta_interests": ["Generative artificial intelligence", "ChatGPT", "AI tools", "Content creation AI"]
+  },
+  "competitor-pricing": {
+    "google_ads_keywords": ["competitor comparison", "pricing deals", "software alternatives", "better pricing", "price comparison"],
+    "meta_interests": ["Comparison shopping", "Software deals", "Business technology"]
+  },
+  "vc-funding": {
+    "google_ads_keywords": ["venture capital", "startup funding", "investment rounds", "seed funding", "Series A"],
+    "meta_interests": ["Venture capital", "Startup funding", "Entrepreneurship", "Angel investing"]
+  },
+  "cloud-computing": {
+    "google_ads_keywords": ["cloud infrastructure", "AWS", "Azure", "Google Cloud", "cloud migration", "SaaS"],
+    "meta_interests": ["Cloud computing", "Amazon Web Services", "Microsoft Azure", "Google Cloud Platform"]
+  },
+  "ai-investment": {
+    "google_ads_keywords": ["AI investment", "artificial intelligence stocks", "tech investment", "AI companies", "machine learning startup"],
+    "meta_interests": ["Technology investing", "Artificial intelligence", "Stock market", "Tech startups"]
+  },
+  "autonomous-vehicles": {
+    "google_ads_keywords": ["self-driving cars", "autonomous vehicle", "Tesla autopilot", "EV technology", "LIDAR"],
+    "meta_interests": ["Self-driving cars", "Electric vehicles", "Tesla", "Automotive technology"]
+  },
+  "cybersecurity": {
+    "google_ads_keywords": ["cybersecurity", "data breach", "zero day vulnerability", "endpoint security", "ransomware protection"],
+    "meta_interests": ["Cybersecurity", "Data privacy", "Information security", "Network security"]
+  }
+}
