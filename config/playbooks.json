@@ -1,0 +1,79 @@
+[
+  {
+    "name": "high-confidence-acquisition",
+    "description": "MPI >= 0.85 on any cluster: increase bids 15% and dispatch a content brief.",
+    "enabled": true,
+    "trigger": {
+      "min_mpi": 0.85,
+      "topic_cluster_pattern": "*",
+      "urgency": null
+    },
+    "cooldown_minutes": 60,
+    "actions": [
+      {
+        "type": "bid_adjustment",
+        "bid_increase_pct": 15,
+        "max_cpc_limit": 5.00
+      },
+      {
+        "type": "content_brief"
+      }
+    ]
+  },
+  {
+    "name": "critical-human-escalation",
+    "description": "MPI >= 0.9 on any cluster: page the on-call team via Slack immediately.",
+    "enabled": true,
+    "trigger": {
+      "min_mpi": 0.9,
+      "topic_cluster_pattern": "*",
+      "urgency": null
+    },
+    "cooldown_minutes": 30,
+    "actions": [
+      {
+        "type": "slack_escalation"
+      }
+    ]
+  },
+  {
+    "name": "ai-cluster-fast-response",
+    "description": "Any ai-* cluster above 0.75: aggressive bid increase + brief.",
+    "enabled": true,
+    "trigger": {
+      "min_mpi": 0.75,
+      "topic_cluster_pattern": "ai-*",
+      "urgency": null
+    },
+    "cooldown_minutes": 45,
+    "actions": [
+      {
+        "type": "bid_adjustment",
+        "bid_increase_pct": 20,
+        "max_cpc_limit": 8.00
+      },
+      {
+        "type": "content_brief"
+      }
+    ]
+  },
+  {
+    "name": "urgent-threat-escalation",
+    "description": "Any threat cluster marked high urgency: brief + Slack escalation.",
+    "enabled": true,
+    "trigger": {
+      "min_mpi": 0.72,
+      "topic_cluster_pattern": "competitor-*",
+      "urgency": ["high"]
+    },
+    "cooldown_minutes": 120,
+    "actions": [
+      {
+        "type": "content_brief"
+      },
+      {
+        "type": "slack_escalation"
+      }
+    ]
+  }
+]
