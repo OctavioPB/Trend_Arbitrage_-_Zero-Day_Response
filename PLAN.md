@@ -332,7 +332,7 @@ Sprint 6 complete.
 
 ---
 
-## F5 — Ad Platform Integration (Google Ads + Meta)
+## Ingestion Expansion (LinkedIn + News + RSS)
 
 **Goal:** Golden Records automatically push audience definitions to Google Ads customer match and Meta custom audiences, converting intelligence into live campaign adjustments within minutes of a signal spike.
 
