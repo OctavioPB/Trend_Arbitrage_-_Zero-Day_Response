@@ -4,8 +4,9 @@ import json
 import logging
 
 import psycopg2.extras
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
+from api.auth import require_scope
 from api.db import get_conn
 from api.schemas.models import GoldenRecordListResponse, GoldenRecordResponse
 
@@ -31,7 +32,9 @@ _LIST_SQL = """
 
 
 @router.get("", response_model=GoldenRecordListResponse)
-def list_active_segments() -> GoldenRecordListResponse:
+def list_active_segments(
+    _subject: str = Depends(require_scope("read:segments")),
+) -> GoldenRecordListResponse:
     """Return active Golden Records (non-expired), ordered by MPI score descending."""
     with get_conn() as conn:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:

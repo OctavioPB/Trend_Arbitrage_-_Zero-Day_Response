@@ -4,8 +4,9 @@ import logging
 from datetime import datetime, timezone
 
 import psycopg2.extras
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 
+from api.auth import require_scope
 from api.db import get_conn
 from api.schemas.models import SignalListResponse, SignalResponse
 
@@ -27,6 +28,7 @@ def list_signals(
     to_dt: datetime | None = Query(default=None, description="ISO8601 upper bound on collected_at"),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=500),
+    _subject: str = Depends(require_scope("read:signals")),
 ) -> SignalListResponse:
     if category and category not in _VALID_CATEGORIES:
         raise HTTPException(status_code=422, detail=f"category must be one of {sorted(_VALID_CATEGORIES)}")

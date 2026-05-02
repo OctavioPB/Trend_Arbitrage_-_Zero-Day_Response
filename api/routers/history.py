@@ -13,9 +13,10 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
+from api.auth import require_scope
 from api.db import get_conn
 from predictive.mpi_archiver import query_history
 
@@ -49,6 +50,7 @@ class MPIHistoryResponse(BaseModel):
 
 @router.get("/mpi", response_model=MPIHistoryResponse)
 def get_mpi_history(
+    _subject: str = Depends(require_scope("read:signals")),
     cluster: str | None = Query(
         default=None,
         description="Filter by topic cluster name. Omit to return all clusters.",

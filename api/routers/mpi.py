@@ -5,8 +5,9 @@ from collections import defaultdict
 from datetime import datetime, timezone
 
 import psycopg2.extras
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 
+from api.auth import require_scope
 from api.db import get_conn
 from api.schemas.models import MPICell, MPIGridResponse
 
@@ -18,6 +19,7 @@ router = APIRouter(prefix="/mpi", tags=["mpi"])
 @router.get("", response_model=MPIGridResponse)
 def get_mpi_grid(
     window_minutes: int = Query(default=60, ge=5, le=1440),
+    _subject: str = Depends(require_scope("read:signals")),
 ) -> MPIGridResponse:
     now = datetime.now(tz=timezone.utc)
     cells = _build_mpi_grid(window_minutes, now)

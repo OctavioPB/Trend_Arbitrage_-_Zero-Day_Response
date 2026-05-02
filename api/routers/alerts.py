@@ -9,10 +9,11 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from alerting.config import AlertRule, create_rule, delete_rule, list_rules
+from api.auth import require_scope
 from api.db import get_conn
 
 logger = logging.getLogger(__name__)
@@ -75,7 +76,9 @@ class AlertRuleListResponse(BaseModel):
 
 
 @router.get("", response_model=AlertRuleListResponse)
-def list_alert_rules() -> AlertRuleListResponse:
+def list_alert_rules(
+    _subject: str = Depends(require_scope("read:segments")),
+) -> AlertRuleListResponse:
     """List all alert rules. Sensitive channel fields are redacted in the response."""
     with get_conn() as conn:
         rules = list_rules(conn)
@@ -86,7 +89,10 @@ def list_alert_rules() -> AlertRuleListResponse:
 
 
 @router.post("", response_model=AlertRuleResponse, status_code=201)
-def create_alert_rule(body: AlertRuleCreate) -> AlertRuleResponse:
+def create_alert_rule(
+    body: AlertRuleCreate,
+    _subject: str = Depends(require_scope("write:alerts")),
+) -> AlertRuleResponse:
     """Create an alert rule. Channel credentials are stored but redacted in responses."""
     _validate_channels(body.channels)
     with get_conn() as conn:
@@ -101,7 +107,10 @@ def create_alert_rule(body: AlertRuleCreate) -> AlertRuleResponse:
 
 
 @router.delete("/{rule_id}", status_code=204)
-def delete_alert_rule(rule_id: str) -> None:
+def delete_alert_rule(
+    rule_id: str,
+    _subject: str = Depends(require_scope("write:alerts")),
+) -> None:
     """Delete an alert rule by ID."""
     with get_conn() as conn:
         found = delete_rule(conn, rule_id)

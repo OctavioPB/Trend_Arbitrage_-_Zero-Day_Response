@@ -2,11 +2,12 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { HeatMap } from './components/HeatMap';
 import { TrendCard } from './components/TrendCard';
 import { MpiGauge } from './components/MpiGauge';
-
-const WS_URL =
-  `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws/heatmap`;
+import LoginPage from './pages/LoginPage';
 
 export default function App() {
+  const [authToken, setAuthToken] = useState(
+    () => sessionStorage.getItem('ta_token') || null
+  );
   const [heatmapData, setHeatmapData] = useState(null);
   const [segments, setSegments] = useState([]);
   const [wsStatus, setWsStatus] = useState('connecting');
@@ -15,11 +16,44 @@ export default function App() {
   const reconnectRef = useRef(null);
   const delayRef = useRef(2000);
 
+  function handleLogin(token) {
+    setAuthToken(token);
+  }
+
+  function handleLogout() {
+    sessionStorage.removeItem('ta_token');
+    setAuthToken(null);
+    wsRef.current?.close();
+  }
+
+  // Authenticated fetch — clears token and forces re-login on 401
+  const authFetch = useCallback(async (url, opts = {}) => {
+    const res = await fetch(url, {
+      ...opts,
+      headers: {
+        ...(opts.headers || {}),
+        Authorization: `Bearer ${authToken}`,
+      },
+    });
+    if (res.status === 401) {
+      handleLogout();
+      return null;
+    }
+    return res;
+  }, [authToken]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (!authToken) {
+    return <LoginPage onLogin={handleLogin} />;
+  }
+
+  // WS URL includes the JWT as a query param (browser WS API has no custom headers)
+  const wsUrl = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws/heatmap?token=${encodeURIComponent(authToken)}`;
+
   // ── WebSocket with exponential-backoff reconnect ──────────────────────────
 
   const connectWs = useCallback(() => {
     setWsStatus('connecting');
-    const ws = new WebSocket(WS_URL);
+    const ws = new WebSocket(wsUrl);
 
     ws.onopen = () => {
       setWsStatus('open');
@@ -34,7 +68,12 @@ export default function App() {
       }
     };
 
-    ws.onclose = () => {
+    ws.onclose = (ev) => {
+      // 4001/4003 = auth failure — don't retry, force re-login
+      if (ev.code === 4001 || ev.code === 4003) {
+        handleLogout();
+        return;
+      }
       setWsStatus('closed');
       reconnectRef.current = setTimeout(() => {
         delayRef.current = Math.min(delayRef.current * 2, 30000);
@@ -44,7 +83,7 @@ export default function App() {
 
     ws.onerror = () => ws.close();
     wsRef.current = ws;
-  }, []);
+  }, [wsUrl]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     connectWs();
@@ -58,15 +97,15 @@ export default function App() {
 
   const fetchSegments = useCallback(async () => {
     try {
-      const res = await fetch('/segments');
-      if (res.ok) {
+      const res = await authFetch('/segments');
+      if (res && res.ok) {
         const data = await res.json();
         setSegments(data.records ?? []);
       }
     } catch (err) {
       console.error('Failed to fetch segments:', err);
     }
-  }, []);
+  }, [authFetch]);
 
   useEffect(() => {
     fetchSegments();
@@ -119,9 +158,14 @@ export default function App() {
           <span style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: '20px', fontWeight: 300, color: '#ffffff' }}>O</span>
           <em style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: '20px', fontWeight: 300, fontStyle: 'italic', color: 'var(--gold-light)' }}>PB</em>
         </span>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: wsColor, display: 'inline-block' }} />
-          <span style={s.navTitle}>TREND ARBITRAGE · INTELLIGENCE</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: wsColor, display: 'inline-block' }} />
+            <span style={s.navTitle}>TREND ARBITRAGE · INTELLIGENCE</span>
+          </div>
+          <button onClick={handleLogout} style={s.logoutBtn} title="Sign out">
+            Sign out
+          </button>
         </div>
       </nav>
 
@@ -283,6 +327,18 @@ const s = {
     letterSpacing: '3px',
     textTransform: 'uppercase',
     color: 'rgba(255,255,255,0.4)',
+  },
+  logoutBtn: {
+    background: 'none',
+    border: '1px solid rgba(255,255,255,0.2)',
+    borderRadius: '6px',
+    color: 'rgba(255,255,255,0.5)',
+    cursor: 'pointer',
+    fontFamily: 'var(--fb)',
+    fontSize: '9px',
+    letterSpacing: '2px',
+    textTransform: 'uppercase',
+    padding: '5px 10px',
   },
   hero: {
     backgroundColor: 'var(--primary)',

@@ -8,8 +8,10 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from api.auth import decode_token
 from api.db import close_pool
-from api.routers import alerts, history, mpi, segments, signals
+from api.middleware.rate_limit import RateLimitMiddleware
+from api.routers import alerts, auth, history, mpi, segments, signals
 
 logger = logging.getLogger(__name__)
 
@@ -25,9 +27,10 @@ app = FastAPI(
     version="0.1.0",
     description="Real-time marketing intelligence — signals, MPI, and golden records.",
     lifespan=lifespan,
-    # Disable default exception detail propagation — we handle it below
     openapi_url="/openapi.json",
 )
+
+app.add_middleware(RateLimitMiddleware)
 
 app.add_middleware(
     CORSMiddleware,
@@ -36,6 +39,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(auth.router)
 app.include_router(signals.router)
 app.include_router(mpi.router)
 app.include_router(segments.router)
@@ -55,14 +59,31 @@ def health() -> dict:
 
 
 @app.websocket("/ws/heatmap")
-async def heatmap_ws(websocket: WebSocket) -> None:
+async def heatmap_ws(websocket: WebSocket, token: str | None = None) -> None:
     """Push MPI heat map grid to connected clients every 60 seconds.
 
-    Clients should reconnect automatically on disconnect — the server handles
-    each connection independently. No state is maintained between connections.
+    Requires a valid JWT passed as ?token=<jwt> query parameter.
+    Close codes: 4001 = missing/invalid token, 4003 = insufficient scope.
     """
+    # Authenticate before accepting the connection
+    if not token:
+        await websocket.close(code=4001, reason="Missing token")
+        return
+
+    try:
+        payload = decode_token(token)
+    except Exception:
+        await websocket.close(code=4001, reason="Invalid token")
+        return
+
+    if "read:signals" not in payload.get("scopes", []):
+        await websocket.close(code=4003, reason="Insufficient scope")
+        return
+
     await websocket.accept()
-    logger.info("WebSocket client connected to /ws/heatmap")
+    logger.info(
+        "WebSocket client connected to /ws/heatmap (sub=%s)", payload.get("sub")
+    )
 
     try:
         while True:
