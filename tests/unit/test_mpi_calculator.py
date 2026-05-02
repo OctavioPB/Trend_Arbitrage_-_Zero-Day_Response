@@ -84,28 +84,37 @@ class TestLoadWeights:
 # ── _compute_volume ───────────────────────────────────────────────────────────
 
 
+_UNIT_WEIGHTS: dict[str, float] = {}  # all sources default to weight 1.0
+
+
 class TestComputeVolume:
     def test_normal_case(self) -> None:
         # 10 signals with baseline 10 → volume = 1.0
-        assert _compute_volume(10, 10.0) == pytest.approx(1.0)
+        score, _ = _compute_volume(_signals(10), 10.0, _UNIT_WEIGHTS)
+        assert score == pytest.approx(1.0)
 
     def test_below_baseline(self) -> None:
         # 5 signals with baseline 10 → volume = 0.5
-        assert _compute_volume(5, 10.0) == pytest.approx(0.5)
+        score, _ = _compute_volume(_signals(5), 10.0, _UNIT_WEIGHTS)
+        assert score == pytest.approx(0.5)
 
     def test_clamped_at_one(self) -> None:
         # 20 signals with baseline 10 → would be 2.0 but clamped to 1.0
-        assert _compute_volume(20, 10.0) == pytest.approx(1.0)
+        score, _ = _compute_volume(_signals(20), 10.0, _UNIT_WEIGHTS)
+        assert score == pytest.approx(1.0)
 
     def test_zero_signals(self) -> None:
-        assert _compute_volume(0, 10.0) == pytest.approx(0.0)
+        score, _ = _compute_volume([], 10.0, _UNIT_WEIGHTS)
+        assert score == pytest.approx(0.0)
 
     def test_zero_baseline_with_signals(self) -> None:
         # No baseline data but signals present → treat as significant
-        assert _compute_volume(5, 0.0) == pytest.approx(1.0)
+        score, _ = _compute_volume(_signals(5), 0.0, _UNIT_WEIGHTS)
+        assert score == pytest.approx(1.0)
 
     def test_zero_baseline_no_signals(self) -> None:
-        assert _compute_volume(0, 0.0) == pytest.approx(0.0)
+        score, _ = _compute_volume([], 0.0, _UNIT_WEIGHTS)
+        assert score == pytest.approx(0.0)
 
 
 # ── _compute_velocity ─────────────────────────────────────────────────────────

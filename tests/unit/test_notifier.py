@@ -224,6 +224,9 @@ class TestEmailBackend:
 
     @patch("alerting.notifier.smtplib.SMTP")
     def test_send_subject_contains_topic_and_mpi(self, mock_smtp_cls):
+        import email
+        from email.header import decode_header
+
         smtp_instance = MagicMock()
         mock_smtp_cls.return_value.__enter__ = MagicMock(return_value=smtp_instance)
         mock_smtp_cls.return_value.__exit__ = MagicMock(return_value=False)
@@ -232,8 +235,20 @@ class TestEmailBackend:
 
         sendmail_call = smtp_instance.sendmail.call_args
         raw_msg = sendmail_call[0][2]
-        assert "ai-chips" in raw_msg
-        assert "0.850" in raw_msg
+
+        msg = email.message_from_string(raw_msg)
+        # Decode the subject (may be RFC 2047 encoded)
+        subject_parts = decode_header(msg["Subject"])
+        subject = "".join(
+            part.decode(enc or "utf-8") if isinstance(part, bytes) else part
+            for part, enc in subject_parts
+        )
+        # Decode the body (may be base64)
+        body = msg.get_payload(decode=True)
+        body_text = body.decode("utf-8") if isinstance(body, bytes) else (body or "")
+
+        assert "ai-chips" in subject
+        assert "0.850" in subject or "0.850" in body_text
 
 
 # ── build_backend factory ─────────────────────────────────────────────────────

@@ -202,11 +202,40 @@ def golden_record_dag() -> None:
         finally:
             conn.commit()
 
+    @task()
+    def run_playbooks(golden_records: list[dict]) -> None:
+        """Run the playbook engine for each generated golden record."""
+        if not golden_records:
+            return
+
+        from playbooks.engine import PlaybookEngine
+
+        engine = PlaybookEngine()
+        for record in golden_records:
+            try:
+                results = engine.run(record, dry_run=False)
+                for r in results:
+                    if r.triggered and not r.cooldown_skipped:
+                        logger.info(
+                            "Playbook %r executed: cluster=%r status=%s actions=%d",
+                            r.playbook_name,
+                            r.topic_cluster,
+                            r.status,
+                            len(r.actions),
+                        )
+            except Exception as exc:  # noqa: BLE001
+                logger.error(
+                    "PlaybookEngine failed for golden_record id=%s: %s",
+                    record.get("id"),
+                    exc,
+                )
+
     mpi_output = compute_mpi()
     archive_mpi(mpi_output)
     records = generate_golden_records(mpi_output)
     fire_alerts(records)
     sync_audiences(records)
+    run_playbooks(records)
 
 
 golden_record_dag()
