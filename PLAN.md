@@ -470,3 +470,24 @@ The following are explicitly excluded from all sprints per `CLAUDE.md`:
 - Historical trend analysis or BI reporting
 - Multi-tenant support
 - Dashboard authentication
+
+---
+
+## Estado actual del proyecto
+
+```
+Sprint 1 — Infrastructure & Kafka         [x] Completado
+Sprint 2 — Ingestion Layer                [x] Completado
+Sprint 3 — Semantic ETL (Airflow + LLM)   [x] Completado
+Sprint 4 — Predictive Processing (MPI)    [x] Completado
+Sprint 5 — Backend API (FastAPI)          [x] Completado
+Sprint 6 — Dashboard & End-to-End        [x] Completado
+F1  — Alerting & Notifications            [x] Completado
+F2  — Historical Baseline                 [x] Completado
+F3  — Data Source Expansion               [x] Completado
+F4  — API Security & Auth                 [x] Completado
+F5  — Ad Platform Integration             [x] Completado
+F6  — Automated Playbook Engine           [x] Completado
+F7  — Performance Feedback Loop           [x] Completado (2026-05-02)
+F8  — Stream Processing Upgrade           [x] Completado (2026-05-02)
+```
