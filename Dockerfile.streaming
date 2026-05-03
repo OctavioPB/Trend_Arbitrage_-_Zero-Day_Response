@@ -1,0 +1,31 @@
+# Streaming services image — used by streaming-classifier, streaming-mpi, streaming-golden-record.
+# Build context is the repo root; run as: python -m streaming.<service>
+FROM python:3.11-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+WORKDIR /app
+
+# Install system dependencies required by psycopg2-binary and playwright are
+# not needed here; kafka-python and psycopg2-binary are pure-wheel installs.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        gcc \
+        libpq-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy only requirements first to leverage layer cache
+COPY requirements.txt .
+RUN pip install --no-cache-dir \
+        anthropic>=0.40.0 \
+        kafka-python>=2.0.2 \
+        psycopg2-binary>=2.9.9 \
+        pydantic>=2.7.0 \
+        tenacity>=8.3.0 \
+        python-dotenv>=1.0.0
+
+# Copy the full project so all internal imports resolve
+COPY . .
+
+# Default entrypoint — overridden per service in docker-compose.yml
+CMD ["python", "-m", "streaming.classifier_stream"]

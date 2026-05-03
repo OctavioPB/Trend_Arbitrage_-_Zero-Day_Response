@@ -21,10 +21,14 @@ x-airflow-common:
     KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS:-kafka:29092}
     KAFKA_TOPIC_RAW: ${KAFKA_TOPIC_RAW:-raw_signals}
     KAFKA_TOPIC_ENRICHED: ${KAFKA_TOPIC_ENRICHED:-enriched_signals}
+    KAFKA_TOPIC_MPI_UPDATE: ${KAFKA_TOPIC_MPI_UPDATE:-mpi_update}
     LLM_MODEL: ${LLM_MODEL:-claude-sonnet-4-20250514}
     LLM_MAX_TOKENS: ${LLM_MAX_TOKENS:-512}
     MPI_THRESHOLD: ${MPI_THRESHOLD:-0.72}
     SIGNAL_WINDOW_MINUTES: ${SIGNAL_WINDOW_MINUTES:-60}
+    # ENRICHMENT_MODE=streaming activates the streaming pipeline.
+    # ENRICHMENT_MODE=batch (default) uses the Airflow DAG path.
+    ENRICHMENT_MODE: ${ENRICHMENT_MODE:-batch}
   volumes:
     - .:/opt/airflow/project
     - ./etl/dags:/opt/airflow/dags
@@ -33,6 +37,41 @@ x-airflow-common:
     &airflow-common-depends-on
     postgres:
       condition: service_healthy
+
+# Shared environment for streaming services (no Airflow overhead)
+x-streaming-common:
+  &streaming-common
+  build:
+    context: .
+    dockerfile: Dockerfile.streaming
+  environment:
+    &streaming-env
+    PYTHONPATH: /app
+    ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+    POSTGRES_DSN: ${POSTGRES_DSN:-postgresql://trend:trend@postgres:5432/trend_arbitrage}
+    KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS:-kafka:29092}
+    KAFKA_TOPIC_RAW: ${KAFKA_TOPIC_RAW:-raw_signals}
+    KAFKA_TOPIC_ENRICHED: ${KAFKA_TOPIC_ENRICHED:-enriched_signals}
+    KAFKA_TOPIC_MPI_UPDATE: ${KAFKA_TOPIC_MPI_UPDATE:-mpi_update}
+    LLM_MODEL: ${LLM_MODEL:-claude-sonnet-4-20250514}
+    LLM_MAX_TOKENS: ${LLM_MAX_TOKENS:-512}
+    MPI_THRESHOLD: ${MPI_THRESHOLD:-0.72}
+    SIGNAL_WINDOW_MINUTES: ${SIGNAL_WINDOW_MINUTES:-60}
+    STREAMING_CONFIG_PATH: /app/config/streaming.json
+    SOURCE_WEIGHTS_PATH: /app/config/source_weights.json
+    MPI_WEIGHTS_PATH: /app/config/mpi_weights.json
+    ENRICHMENT_MODE: ${ENRICHMENT_MODE:-batch}
+    LOG_LEVEL: ${LOG_LEVEL:-INFO}
+  volumes:
+    - .:/app
+  depends_on:
+    kafka:
+      condition: service_healthy
+    postgres:
+      condition: service_healthy
+  restart: unless-stopped
+  profiles:
+    - streaming
 
 services:
 
@@ -96,6 +135,8 @@ services:
       --topic enriched_signals --partitions 3 --replication-factor 1 &&
       kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists
       --topic golden_record_ready --partitions 1 --replication-factor 1 &&
+      kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists
+      --topic mpi_update --partitions 3 --replication-factor 1 &&
       echo "All Kafka topics created successfully"
 
   # ─── PostgreSQL ─────────────────────────────────────────────────────────────
@@ -184,6 +225,26 @@ services:
       retries: 5
       start_period: 30s
     restart: unless-stopped
+
+  # ─── Streaming: LLM Classifier ─────────────────────────────────────────────
+  # Activate with: docker-compose --profile streaming up -d
+  # Also set ENRICHMENT_MODE=streaming in your .env file.
+  streaming-classifier:
+    <<: *streaming-common
+    container_name: trend_streaming_classifier
+    command: ["python", "-m", "streaming.classifier_stream"]
+
+  # ─── Streaming: MPI Recomputer ─────────────────────────────────────────────
+  streaming-mpi:
+    <<: *streaming-common
+    container_name: trend_streaming_mpi
+    command: ["python", "-m", "streaming.mpi_stream"]
+
+  # ─── Streaming: Golden Record Generator ────────────────────────────────────
+  streaming-golden-record:
+    <<: *streaming-common
+    container_name: trend_streaming_golden_record
+    command: ["python", "-m", "streaming.golden_record_stream"]
 
 volumes:
   zookeeper-data:

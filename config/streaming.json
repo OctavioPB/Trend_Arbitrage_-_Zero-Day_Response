@@ -1,0 +1,12 @@
+{
+  "_comment": "Streaming pipeline tuning — all changes require a service restart.",
+  "micro_batch_size": 5,
+  "mpi_recompute_debounce_ms": 500,
+  "rolling_window_minutes": 60,
+  "max_in_flight_llm_requests": 5,
+  "mpi_change_threshold": 0.05,
+  "consumer_poll_timeout_ms": 1000,
+  "offset_commit_interval_messages": 10,
+  "golden_record_cooldown_minutes": 5,
+  "baseline_cache_ttl_minutes": 5
+}
