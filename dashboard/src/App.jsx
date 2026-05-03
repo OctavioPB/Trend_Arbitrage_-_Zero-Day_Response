@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { HeatMap } from './components/HeatMap';
 import { TrendCard } from './components/TrendCard';
 import { MpiGauge } from './components/MpiGauge';
+import { PerformancePanel } from './components/PerformancePanel';
 import LoginPage from './pages/LoginPage';
 
 export default function App() {
@@ -290,6 +291,8 @@ export default function App() {
               <TrendCard key={rec.id} record={rec} />
             ))
           )}
+
+          <PerformancePanel authFetch={authFetch} />
         </div>
       </main>
 

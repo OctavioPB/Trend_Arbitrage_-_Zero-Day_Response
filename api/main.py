@@ -11,7 +11,7 @@ from fastapi.responses import JSONResponse
 from api.auth import decode_token
 from api.db import close_pool
 from api.middleware.rate_limit import RateLimitMiddleware
-from api.routers import alerts, auth, history, mpi, playbooks, segments, signals
+from api.routers import alerts, auth, history, mpi, performance, playbooks, segments, signals
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +46,7 @@ app.include_router(segments.router)
 app.include_router(alerts.router)
 app.include_router(history.router)
 app.include_router(playbooks.router)
+app.include_router(performance.router)
 
 
 # ── health ────────────────────────────────────────────────────────────────────
