@@ -4,11 +4,13 @@ import { TrendCard } from './components/TrendCard';
 import { MpiGauge } from './components/MpiGauge';
 import { PerformancePanel } from './components/PerformancePanel';
 import LoginPage from './pages/LoginPage';
+import DemoPage from './pages/DemoPage';
 
 export default function App() {
   const [authToken, setAuthToken] = useState(
     () => sessionStorage.getItem('ta_token') || null
   );
+  const [page, setPage] = useState('dashboard'); // 'dashboard' | 'demo'
   const [heatmapData, setHeatmapData] = useState(null);
   const [segments, setSegments] = useState([]);
   const [wsStatus, setWsStatus] = useState('connecting');
@@ -158,6 +160,34 @@ export default function App() {
 
   // ── Render ────────────────────────────────────────────────────────────────
 
+  // Delegate the Demo page entirely — it only needs authFetch
+  if (page === 'demo') {
+    return (
+      <div style={{ minHeight: '100vh', backgroundColor: 'var(--light)' }}>
+        <nav style={s.nav}>
+          <span>
+            <span style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: '20px', fontWeight: 300, color: '#ffffff' }}>O</span>
+            <em style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: '20px', fontWeight: 300, fontStyle: 'italic', color: 'var(--gold-light)' }}>PB</em>
+          </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: wsColor, display: 'inline-block' }} />
+              <span style={s.navTitle}>TREND ARBITRAGE · INTELLIGENCE</span>
+            </div>
+            <button onClick={() => setPage('dashboard')} style={{ ...s.navLink }}>Dashboard</button>
+            <button onClick={() => setPage('demo')} style={{ ...s.navLink, ...s.navLinkActive }}>Demo</button>
+            <button onClick={handleLogout} style={s.logoutBtn} title="Sign out">Sign out</button>
+          </div>
+        </nav>
+        <DemoPage authFetch={authFetch} />
+        <footer style={s.footer}>
+          <span>OPB · OCTAVIO PÉREZ BRAVO · TREND ARBITRAGE & ZERO-DAY RESPONSE</span>
+          <span>{new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long' }).toUpperCase()}</span>
+        </footer>
+      </div>
+    );
+  }
+
   return (
     <div style={{ minHeight: '100vh', backgroundColor: 'var(--light)' }}>
 
@@ -172,6 +202,18 @@ export default function App() {
             <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: wsColor, display: 'inline-block' }} />
             <span style={s.navTitle}>TREND ARBITRAGE · INTELLIGENCE</span>
           </div>
+          <button
+            onClick={() => setPage('dashboard')}
+            style={{ ...s.navLink, ...(page === 'dashboard' ? s.navLinkActive : {}) }}
+          >
+            Dashboard
+          </button>
+          <button
+            onClick={() => setPage('demo')}
+            style={{ ...s.navLink, ...(page === 'demo' ? s.navLinkActive : {}) }}
+          >
+            Demo
+          </button>
           <button onClick={handleLogout} style={s.logoutBtn} title="Sign out">
             Sign out
           </button>
@@ -350,6 +392,23 @@ const s = {
     letterSpacing: '2px',
     textTransform: 'uppercase',
     padding: '5px 10px',
+  },
+  navLink: {
+    background: 'none',
+    border: 'none',
+    color: 'rgba(255,255,255,0.45)',
+    cursor: 'pointer',
+    fontFamily: 'var(--fb)',
+    fontSize: '9px',
+    letterSpacing: '2px',
+    textTransform: 'uppercase',
+    padding: '5px 8px',
+    borderRadius: '6px',
+    transition: 'color 0.15s',
+  },
+  navLinkActive: {
+    color: 'var(--gold-light)',
+    backgroundColor: 'rgba(201,168,76,0.12)',
   },
   hero: {
     backgroundColor: 'var(--primary)',

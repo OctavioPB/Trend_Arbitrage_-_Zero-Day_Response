@@ -19,6 +19,7 @@ export default defineConfig({
       '/performance': { target: 'http://localhost:8000', changeOrigin: true },
       '/playbooks':   { target: 'http://localhost:8000', changeOrigin: true },
       '/alerts':      { target: 'http://localhost:8000', changeOrigin: true },
+      '/demo':        { target: 'http://localhost:8000', changeOrigin: true },
     },
   },
 });
