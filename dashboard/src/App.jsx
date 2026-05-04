@@ -5,12 +5,13 @@ import { MpiGauge } from './components/MpiGauge';
 import { PerformancePanel } from './components/PerformancePanel';
 import LoginPage from './pages/LoginPage';
 import DemoPage from './pages/DemoPage';
+import InfoPage from './pages/InfoPage';
 
 export default function App() {
   const [authToken, setAuthToken] = useState(
     () => sessionStorage.getItem('ta_token') || null
   );
-  const [page, setPage] = useState('dashboard'); // 'dashboard' | 'demo'
+  const [page, setPage] = useState('dashboard'); // 'dashboard' | 'demo' | 'info'
   const [heatmapData, setHeatmapData] = useState(null);
   const [segments, setSegments] = useState([]);
   const [wsStatus, setWsStatus] = useState('connecting');
@@ -175,6 +176,7 @@ export default function App() {
               <span style={s.navTitle}>TREND ARBITRAGE · INTELLIGENCE</span>
             </div>
             <button onClick={() => setPage('dashboard')} style={{ ...s.navLink }}>Dashboard</button>
+            <button onClick={() => setPage('info')} style={{ ...s.navLink }}>Info</button>
             <button onClick={() => setPage('demo')} style={{ ...s.navLink, ...s.navLinkActive }}>Demo</button>
             <button onClick={handleLogout} style={s.logoutBtn} title="Sign out">Sign out</button>
           </div>
@@ -184,6 +186,30 @@ export default function App() {
           <span>OPB · OCTAVIO PÉREZ BRAVO · TREND ARBITRAGE & ZERO-DAY RESPONSE</span>
           <span>{new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long' }).toUpperCase()}</span>
         </footer>
+      </div>
+    );
+  }
+
+  if (page === 'info') {
+    return (
+      <div style={{ minHeight: '100vh', backgroundColor: 'var(--light)' }}>
+        <nav style={s.nav}>
+          <span>
+            <span style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: '20px', fontWeight: 300, color: '#ffffff' }}>O</span>
+            <em style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: '20px', fontWeight: 300, fontStyle: 'italic', color: 'var(--gold-light)' }}>PB</em>
+          </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: wsColor, display: 'inline-block' }} />
+              <span style={s.navTitle}>TREND ARBITRAGE · INTELLIGENCE</span>
+            </div>
+            <button onClick={() => setPage('dashboard')} style={{ ...s.navLink }}>Dashboard</button>
+            <button onClick={() => setPage('info')} style={{ ...s.navLink, ...s.navLinkActive }}>Info</button>
+            <button onClick={() => setPage('demo')} style={{ ...s.navLink }}>Demo</button>
+            <button onClick={handleLogout} style={s.logoutBtn} title="Sign out">Sign out</button>
+          </div>
+        </nav>
+        <InfoPage />
       </div>
     );
   }
@@ -202,16 +228,13 @@ export default function App() {
             <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: wsColor, display: 'inline-block' }} />
             <span style={s.navTitle}>TREND ARBITRAGE · INTELLIGENCE</span>
           </div>
-          <button
-            onClick={() => setPage('dashboard')}
-            style={{ ...s.navLink, ...(page === 'dashboard' ? s.navLinkActive : {}) }}
-          >
+          <button onClick={() => setPage('dashboard')} style={{ ...s.navLink, ...s.navLinkActive }}>
             Dashboard
           </button>
-          <button
-            onClick={() => setPage('demo')}
-            style={{ ...s.navLink, ...(page === 'demo' ? s.navLinkActive : {}) }}
-          >
+          <button onClick={() => setPage('info')} style={{ ...s.navLink }}>
+            Info
+          </button>
+          <button onClick={() => setPage('demo')} style={{ ...s.navLink }}>
             Demo
           </button>
           <button onClick={handleLogout} style={s.logoutBtn} title="Sign out">
