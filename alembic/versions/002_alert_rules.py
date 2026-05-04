@@ -47,7 +47,7 @@ def upgrade() -> None:
             "channels",
             postgresql.JSONB(astext_type=sa.Text()),
             nullable=False,
-            server_default="'[]'::jsonb",
+            server_default=sa.text("'[]'::jsonb"),
         ),
         sa.Column("enabled", sa.Boolean(), nullable=False, server_default="true"),
         # Suppression clock — set to NOW() after each successful alert dispatch

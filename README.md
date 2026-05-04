@@ -151,7 +151,7 @@ When `MPI ≥ MPI_THRESHOLD (default 0.72)` for a topic cluster, a **Golden Reco
 
 ### Quickstart
 
-```bash
+```powershell
 # 1. Clone and configure
 git clone <repo-url>
 cd trend-arbitrage
@@ -161,14 +161,25 @@ cp .env.example .env
 # 2. Start infrastructure (Kafka, Postgres, Redis, Airflow)
 docker-compose up -d
 
-# 3. Wait ~60 s for Airflow init, then apply DB migrations
+# 3. Initialize the Airflow metadata database (run once after first `up`)
+#    airflow-init can fail silently on first boot due to a network race condition;
+#    running it explicitly guarantees the DB is migrated before the webserver starts.
+docker-compose run --rm airflow-init
+
+# 4. Apply project DB migrations (trend_arbitrage schema)
 pip install alembic psycopg2-binary python-dotenv
+$env:POSTGRES_DSN="postgresql://trend:trend@localhost:5433/trend_arbitrage"
 alembic upgrade head
 
-# 4. Verify services
+# 5. Verify services
 docker-compose ps                        # all containers should be healthy
 curl http://localhost:8080/health        # Airflow webserver → {"status":"healthy"}
 ```
+
+> **Port offsets:** this project uses non-default host ports to coexist with other
+> Docker projects. PostgreSQL is exposed on **5433** (not 5432) and Redis on **6380**
+> (not 6379). Internal Docker networking still uses the standard ports — only host
+> access differs.
 
 ### Activate streaming mode (optional, recommended for sub-30 s latency)
 
@@ -187,15 +198,28 @@ docker-compose --profile streaming up -d
 
 ### Start the API and dashboard (development)
 
-```bash
-# API
+```powershell
+# ── API ──────────────────────────────────────────────────────────────────────
 pip install -r requirements.txt
+
+# Load .env before starting uvicorn so API_ADMIN_PASSWORD and other vars are set.
+# PowerShell one-liner — run from the repo root:
+Get-Content .env | Where-Object { $_ -match '^\w' } | ForEach-Object { $k,$v = $_ -split '=',2; [System.Environment]::SetEnvironmentVariable($k, $v) }
 uvicorn api.main:app --reload --port 8000
 
-# Dashboard
-cd dashboard && npm install && npm run dev
-# → http://localhost:5173
+# ── Dashboard ─────────────────────────────────────────────────────────────────
+# Use 'node ... vite.js' directly — npm/npx both spawn cmd.exe internally,
+# which interprets the '&' in the repo folder name as a command separator
+# and truncates the module path.
+cd dashboard
+npm install
+node node_modules/vite/bin/vite.js
+# → http://localhost:3000
 ```
+
+> **Login credentials:** use the values of `API_ADMIN_USER` and `API_ADMIN_PASSWORD`
+> from your `.env` file. The API returns `422` if `API_ADMIN_PASSWORD` is not set —
+> confirm the env-loading step ran before starting uvicorn.
 
 ---
 
@@ -205,10 +229,10 @@ cd dashboard && npm install && npm run dev
 |---|---|---|
 | Airflow UI | http://localhost:8080 | admin / admin |
 | FastAPI docs | http://localhost:8000/docs | — (JWT required for protected routes) |
-| React dashboard | http://localhost:5173 | — |
-| PostgreSQL | localhost:5432 | trend / trend · db: trend_arbitrage |
+| React dashboard | http://localhost:3000 | API_ADMIN_USER / API_ADMIN_PASSWORD (from .env) |
+| PostgreSQL | localhost:**5433** | trend / trend · db: trend_arbitrage |
 | Kafka | localhost:9092 | — |
-| Redis | localhost:6379 | — |
+| Redis | localhost:**6380** | — |
 
 ### API authentication
 

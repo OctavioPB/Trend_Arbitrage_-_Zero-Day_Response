@@ -43,7 +43,7 @@ def upgrade() -> None:
             "scopes",
             postgresql.ARRAY(sa.Text()),
             nullable=False,
-            server_default="'{}'::text[]",
+            server_default=sa.text("'{}'::text[]"),
         ),
         sa.Column(
             "created_at",

@@ -43,16 +43,15 @@ export default function App() {
     return res;
   }, [authToken]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  if (!authToken) {
-    return <LoginPage onLogin={handleLogin} />;
-  }
-
   // WS URL includes the JWT as a query param (browser WS API has no custom headers)
-  const wsUrl = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws/heatmap?token=${encodeURIComponent(authToken)}`;
+  const wsUrl = authToken
+    ? `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws/heatmap?token=${encodeURIComponent(authToken)}`
+    : null;
 
   // ── WebSocket with exponential-backoff reconnect ──────────────────────────
 
   const connectWs = useCallback(() => {
+    if (!wsUrl) return;
     setWsStatus('connecting');
     const ws = new WebSocket(wsUrl);
 
@@ -87,16 +86,18 @@ export default function App() {
   }, [wsUrl]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
+    if (!authToken) return;
     connectWs();
     return () => {
       clearTimeout(reconnectRef.current);
       wsRef.current?.close();
     };
-  }, [connectWs]);
+  }, [connectWs, authToken]);
 
   // ── REST polling for Golden Records (60s interval) ────────────────────────
 
   const fetchSegments = useCallback(async () => {
+    if (!authToken) return;
     try {
       const res = await authFetch('/segments');
       if (res && res.ok) {
@@ -106,13 +107,14 @@ export default function App() {
     } catch (err) {
       console.error('Failed to fetch segments:', err);
     }
-  }, [authFetch]);
+  }, [authFetch, authToken]);
 
   useEffect(() => {
+    if (!authToken) return;
     fetchSegments();
     const id = setInterval(fetchSegments, 60_000);
     return () => clearInterval(id);
-  }, [fetchSegments]);
+  }, [fetchSegments, authToken]);
 
   // ── Derived KPIs ──────────────────────────────────────────────────────────
 
@@ -138,6 +140,12 @@ export default function App() {
       .sort((a, b) => b.score - a.score)
       .slice(0, 6);
   }, [heatmapData]);
+
+  // ── Conditional render — all hooks are above this line ───────────────────
+
+  if (!authToken) {
+    return <LoginPage onLogin={handleLogin} />;
+  }
 
   const lastUpdated = heatmapData?.computed_at
     ? new Date(heatmapData.computed_at).toLocaleTimeString('en-US', { hour12: false })
@@ -350,26 +358,31 @@ const s = {
       linear-gradient(90deg, rgba(255,255,255,.025) 1px, transparent 1px)
     `,
     backgroundSize: '48px 48px',
-    padding: '64px 48px',
+    padding: '24px 48px',
   },
   heroInner: {
     maxWidth: '1300px',
     margin: '0 auto',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '32px',
+    flexWrap: 'wrap',
   },
   heroTitle: {
     fontFamily: "'Fraunces', Georgia, serif",
-    fontSize: '48px',
+    fontSize: '28px',
     fontWeight: 300,
     color: 'var(--white)',
-    margin: '0 0 12px 0',
+    margin: 0,
     lineHeight: 1.1,
+    flexShrink: 0,
   },
   heroSub: {
     fontFamily: 'var(--fb)',
-    fontSize: '15px',
-    color: 'rgba(255,255,255,0.6)',
-    margin: '0 0 16px 0',
-    lineHeight: 1.7,
+    fontSize: '12px',
+    color: 'rgba(255,255,255,0.5)',
+    margin: 0,
+    lineHeight: 1.5,
   },
   kpiSection: {
     display: 'grid',

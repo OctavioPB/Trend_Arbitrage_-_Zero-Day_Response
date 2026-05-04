@@ -8,3 +8,9 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-E
     CREATE DATABASE airflow;
     GRANT ALL PRIVILEGES ON DATABASE airflow TO airflow;
 EOSQL
+
+# PG15+ removed implicit CREATE on public schema — grant it explicitly.
+psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "airflow" <<-EOSQL
+    GRANT ALL ON SCHEMA public TO airflow;
+    ALTER SCHEMA public OWNER TO airflow;
+EOSQL
