@@ -491,3 +491,4 @@ F6  — Automated Playbook Engine           [x] Completado
 F7  — Performance Feedback Loop           [x] Completado (2026-05-02)
 F8  — Stream Processing Upgrade           [x] Completado (2026-05-02)
 ```
+REMEBER: Couple of UI fixes still pending
