@@ -4,6 +4,8 @@ Real-time marketing intelligence platform that detects external demand spikes �
 
 **Core value proposition:** be the first bidder on emerging keywords and content angles by reacting to market pressure minutes after a signal appears, not hours.
 
+It detects signals that suggest a shift in search behaviour—an emerging keyword, a new content angle, a change in what people are suddenly looking for—and places an automated first bid within a window of minutes from signal appearance. The core mechanism is reaction to market pressure: a measurable, external change in volume, velocity, or sentiment that has not yet been acted on by competing bidders.
+
 ---
 
 ## Table of Contents
