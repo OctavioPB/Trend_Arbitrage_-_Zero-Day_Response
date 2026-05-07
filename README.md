@@ -6,8 +6,7 @@ Real-time marketing intelligence platform that detects external demand spikes �
 
 It detects signals that suggest a shift in search behaviour—an emerging keyword, a new content angle, a change in what people are suddenly looking for—and places an automated first bid within a window of minutes from signal appearance. The core mechanism is reaction to market pressure: a measurable, external change in volume, velocity, or sentiment that has not yet been acted on by competing bidders.
 
-**What is being acted on:** 
-The inputs are not keywords that are simply rising in a trend report. They are signals with a specific shape: a sudden, external pressure that causes a deviation from baseline behaviour. Examples include a regulatory announcement that changes what people need to know, a piece of media that introduces new language into a large audience, an unanticipated event that creates immediate demand for information or alternatives, or a competitor withdrawal that leaves a vacuum. The output is a bid on a term or angle that did not exist in a commercially meaningful form minutes earlier.
+**What is being acted on:** The inputs are not keywords that are simply rising in a trend report. They are signals with a specific shape: a sudden, external pressure that causes a deviation from baseline behaviour. Examples include a regulatory announcement that changes what people need to know, a piece of media that introduces new language into a large audience, an unanticipated event that creates immediate demand for information or alternatives, or a competitor withdrawal that leaves a vacuum. The output is a bid on a term or angle that did not exist in a commercially meaningful form minutes earlier.
 ---
 
 ## Table of Contents
