@@ -6,12 +6,13 @@ import { PerformancePanel } from './components/PerformancePanel';
 import LoginPage from './pages/LoginPage';
 import DemoPage from './pages/DemoPage';
 import InfoPage from './pages/InfoPage';
+import PersonalizePage from './pages/PersonalizePage';
 
 export default function App() {
   const [authToken, setAuthToken] = useState(
     () => sessionStorage.getItem('ta_token') || null
   );
-  const [page, setPage] = useState('dashboard'); // 'dashboard' | 'demo' | 'info'
+  const [page, setPage] = useState('dashboard'); // 'dashboard' | 'signals' | 'demo' | 'info'
   const [heatmapData, setHeatmapData] = useState(null);
   const [segments, setSegments] = useState([]);
   const [wsStatus, setWsStatus] = useState('connecting');
@@ -158,25 +159,56 @@ export default function App() {
   // ── Render ────────────────────────────────────────────────────────────────
 
   // Delegate the Demo page entirely — it only needs authFetch
+  // ── Shared nav renderer ───────────────────────────────────────────────────
+  function Nav({ current }) {
+    return (
+      <nav style={s.nav}>
+        <span>
+          <span style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: '20px', fontWeight: 300, color: '#ffffff' }}>O</span>
+          <em style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: '20px', fontWeight: 300, fontStyle: 'italic', color: 'var(--gold-light)' }}>PB</em>
+        </span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: wsColor, display: 'inline-block' }} />
+            <span style={s.navTitle}>TREND ARBITRAGE · INTELLIGENCE</span>
+          </div>
+          {[
+            { key: 'dashboard', label: 'Dashboard' },
+            { key: 'signals',   label: 'Signals' },
+            { key: 'demo',      label: 'Demo' },
+            { key: 'info',      label: 'Info' },
+          ].map(({ key, label }) => (
+            <button
+              key={key}
+              onClick={() => setPage(key)}
+              style={{ ...s.navLink, ...(current === key ? s.navLinkActive : {}) }}
+            >
+              {label}
+            </button>
+          ))}
+          <button onClick={handleLogout} style={s.logoutBtn} title="Sign out">Sign out</button>
+        </div>
+      </nav>
+    );
+  }
+
+  if (page === 'signals') {
+    return (
+      <div style={{ minHeight: '100vh', backgroundColor: 'var(--light)' }}>
+        <Nav current="signals" />
+        <PersonalizePage authFetch={authFetch} />
+        <footer style={s.footer}>
+          <span>OPB · OCTAVIO PÉREZ BRAVO · TREND ARBITRAGE & ZERO-DAY RESPONSE</span>
+          <span>{new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long' }).toUpperCase()}</span>
+        </footer>
+      </div>
+    );
+  }
+
   if (page === 'demo') {
     return (
       <div style={{ minHeight: '100vh', backgroundColor: 'var(--light)' }}>
-        <nav style={s.nav}>
-          <span>
-            <span style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: '20px', fontWeight: 300, color: '#ffffff' }}>O</span>
-            <em style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: '20px', fontWeight: 300, fontStyle: 'italic', color: 'var(--gold-light)' }}>PB</em>
-          </span>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: wsColor, display: 'inline-block' }} />
-              <span style={s.navTitle}>TREND ARBITRAGE · INTELLIGENCE</span>
-            </div>
-            <button onClick={() => setPage('dashboard')} style={{ ...s.navLink }}>Dashboard</button>
-            <button onClick={() => setPage('info')} style={{ ...s.navLink }}>Info</button>
-            <button onClick={() => setPage('demo')} style={{ ...s.navLink, ...s.navLinkActive }}>Demo</button>
-            <button onClick={handleLogout} style={s.logoutBtn} title="Sign out">Sign out</button>
-          </div>
-        </nav>
+        <Nav current="demo" />
         <DemoPage authFetch={authFetch} />
         <footer style={s.footer}>
           <span>OPB · OCTAVIO PÉREZ BRAVO · TREND ARBITRAGE & ZERO-DAY RESPONSE</span>
@@ -189,22 +221,7 @@ export default function App() {
   if (page === 'info') {
     return (
       <div style={{ minHeight: '100vh', backgroundColor: 'var(--light)' }}>
-        <nav style={s.nav}>
-          <span>
-            <span style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: '20px', fontWeight: 300, color: '#ffffff' }}>O</span>
-            <em style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: '20px', fontWeight: 300, fontStyle: 'italic', color: 'var(--gold-light)' }}>PB</em>
-          </span>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: wsColor, display: 'inline-block' }} />
-              <span style={s.navTitle}>TREND ARBITRAGE · INTELLIGENCE</span>
-            </div>
-            <button onClick={() => setPage('dashboard')} style={{ ...s.navLink }}>Dashboard</button>
-            <button onClick={() => setPage('info')} style={{ ...s.navLink, ...s.navLinkActive }}>Info</button>
-            <button onClick={() => setPage('demo')} style={{ ...s.navLink }}>Demo</button>
-            <button onClick={handleLogout} style={s.logoutBtn} title="Sign out">Sign out</button>
-          </div>
-        </nav>
+        <Nav current="info" />
         <InfoPage />
       </div>
     );
@@ -214,30 +231,7 @@ export default function App() {
     <div style={{ minHeight: '100vh', backgroundColor: 'var(--light)' }}>
 
       {/* ── Navigation ── */}
-      <nav style={s.nav}>
-        <span>
-          <span style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: '20px', fontWeight: 300, color: '#ffffff' }}>O</span>
-          <em style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: '20px', fontWeight: 300, fontStyle: 'italic', color: 'var(--gold-light)' }}>PB</em>
-        </span>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: wsColor, display: 'inline-block' }} />
-            <span style={s.navTitle}>TREND ARBITRAGE · INTELLIGENCE</span>
-          </div>
-          <button onClick={() => setPage('dashboard')} style={{ ...s.navLink, ...s.navLinkActive }}>
-            Dashboard
-          </button>
-          <button onClick={() => setPage('info')} style={{ ...s.navLink }}>
-            Info
-          </button>
-          <button onClick={() => setPage('demo')} style={{ ...s.navLink }}>
-            Demo
-          </button>
-          <button onClick={handleLogout} style={s.logoutBtn} title="Sign out">
-            Sign out
-          </button>
-        </div>
-      </nav>
+      <Nav current="dashboard" />
 
       {/* ── Hero ── */}
       <header style={s.hero}>

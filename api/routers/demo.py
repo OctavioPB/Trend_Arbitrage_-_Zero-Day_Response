@@ -18,60 +18,42 @@ from fastapi import APIRouter
 from pydantic import BaseModel
 
 from api.db import get_conn
+from api.routers.clusters import DEFAULTS as _CLUSTER_DEFAULTS, ensure_table as _ensure_clusters
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/demo", tags=["demo"])
 
-# ── Cluster definitions ───────────────────────────────────────────────────────
-
 _MPI_THRESHOLD = 0.72
 
-_CLUSTERS = [
-    {"name": "ai-chips",           "sources": ["reddit", "twitter", "news"],    "positive_ratio": 0.75, "signal_count": 42, "urgency": "high",   "mpi": 0.87},
-    {"name": "llm-regulation",     "sources": ["news", "linkedin", "rss"],      "positive_ratio": 0.25, "signal_count": 28, "urgency": "high",   "mpi": 0.74},
-    {"name": "generative-ai-tools","sources": ["reddit", "twitter", "rss"],     "positive_ratio": 0.80, "signal_count": 35, "urgency": "medium", "mpi": 0.81},
-    {"name": "autonomous-vehicles","sources": ["news", "twitter", "scraper"],   "positive_ratio": 0.55, "signal_count": 18, "urgency": "medium", "mpi": 0.61},
-    {"name": "open-source-models", "sources": ["reddit", "rss", "twitter"],     "positive_ratio": 0.70, "signal_count": 22, "urgency": "low",    "mpi": 0.68},
-]
 
-_SAMPLE_TEXTS: dict[str, list[str]] = {
-    "ai-chips": [
-        "NVIDIA H100 allocation waitlists extending to Q3 — major cloud providers reporting shortages",
-        "AMD MI300X gaining traction as H100 alternative, 40% cost reduction for inference workloads",
-        "GPU prices surging on secondary market, up 35% month-over-month for data center GPUs",
-        "TSMC expanding 3nm capacity, primary beneficiary expected to be AI chip manufacturers",
-        "Intel Gaudi 3 benchmarks released — competitive on transformer training at lower price point",
-    ],
-    "llm-regulation": [
-        "EU AI Act enforcement timeline confirmed — high-risk AI systems face compliance deadline",
-        "FTC opens inquiry into foundation model market concentration and competitive effects",
-        "California AI safety bill introduced with mandatory testing requirements for frontier models",
-        "OpenAI, Anthropic, Google sign voluntary White House AI safety commitments",
-        "China releases updated generative AI regulations requiring content moderation at scale",
-    ],
-    "generative-ai-tools": [
-        "Claude 4 adoption accelerating in enterprise — coding assistant market share growing",
-        "Adobe Firefly integration into Creative Cloud drives 60% increase in AI image generation",
-        "GitHub Copilot Enterprise reaches 1M paid seats, Microsoft reports in quarterly earnings",
-        "Midjourney v7 benchmarks show photorealism improvements over Stable Diffusion 3",
-        "GPT-5 rumors circulating after OpenAI infrastructure job postings spike 200%",
-    ],
-    "autonomous-vehicles": [
-        "Waymo expanding robotaxi service to 10 new cities by end of year",
-        "Tesla FSD v13 rollout shows 40% reduction in interventions per mile in beta",
-        "Uber partners with Waymo for autonomous ride-hailing in San Francisco and Phoenix",
-        "NHTSA proposes updated autonomous vehicle testing framework, comment period open",
-        "Cruise resumes limited operations after safety review with new geofencing restrictions",
-    ],
-    "open-source-models": [
-        "Meta Llama 3.2 outperforms GPT-4o on coding benchmarks, available commercially",
-        "Mistral Large 2 reaches top-5 on LMSYS Chatbot Arena leaderboard",
-        "HuggingFace reports 50% of enterprise AI projects now use open-source base models",
-        "Microsoft releases Phi-3.5 mini with 128K context, designed for edge deployment",
-        "Google opens Gemma 2 weights for commercial use under Apache 2.0 license",
-    ],
-}
+def _load_clusters() -> list[dict]:
+    """Return cluster configs from DB if any exist, otherwise fall back to defaults."""
+    try:
+        _ensure_clusters()
+        with get_conn() as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute("SELECT * FROM cluster_configs ORDER BY created_at ASC")
+                rows = cur.fetchall()
+        if rows:
+            return [
+                {
+                    "name": r["name"],
+                    "sources": list(r["sources"] or []),
+                    "positive_ratio": float(r["positive_ratio"]),
+                    "signal_count": int(r["signal_count"]),
+                    "urgency": r["urgency"],
+                    "mpi": float(r["mpi_score"]),
+                    "sample_texts": list(r["sample_texts"] or []),
+                }
+                for r in rows
+            ]
+    except Exception as exc:
+        logger.warning("Could not load cluster configs from DB, using defaults: %s", exc)
+    return [
+        {**c, "mpi": c["mpi_score"]}
+        for c in _CLUSTER_DEFAULTS
+    ]
 
 
 # ── Response models ───────────────────────────────────────────────────────────
@@ -110,12 +92,18 @@ def seed_demo() -> SeedResponse:
     total_signals = 0
     total_golden = 0
 
+    clusters = _load_clusters()
+
     with get_conn() as conn:
         with conn.cursor() as cur:
-            for cluster in _CLUSTERS:
+            for cluster in clusters:
                 name = cluster["name"]
                 n = cluster["signal_count"]
-                texts = _SAMPLE_TEXTS[name]
+                texts = cluster.get("sample_texts") or [
+                    f"Signal detected for topic cluster '{name}' — market activity increasing",
+                    f"New development in '{name}' space attracting analyst attention",
+                    f"Industry sources report momentum shift in '{name}' segment",
+                ]
 
                 for i in range(n):
                     roll = random.random()
