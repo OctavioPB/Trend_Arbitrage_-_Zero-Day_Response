@@ -15,7 +15,7 @@ export default function LoginPage({ onLogin }) {
     setError(null);
     setLoading(true);
     try {
-      const body = new URLSearchParams({ username, password });
+      const body = new URLSearchParams({ grant_type: 'password', username, password });
       const res = await fetch('/auth/token', {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -23,7 +23,12 @@ export default function LoginPage({ onLogin }) {
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        setError(data.detail || 'Authentication failed');
+        const d = data.detail;
+        setError(
+          typeof d === 'string' ? d
+          : Array.isArray(d) ? d.map(e => e.msg ?? String(e)).join(' · ')
+          : 'Authentication failed'
+        );
         return;
       }
       const data = await res.json();
@@ -99,6 +104,29 @@ export default function LoginPage({ onLogin }) {
 
               <button type="submit" style={loading ? { ...s.btn, ...s.btnDisabled } : s.btn} disabled={loading}>
                 {loading ? 'Signing in…' : 'Sign In'}
+              </button>
+
+              <button
+                type="button"
+                onClick={async () => {
+                  setError(null);
+                  setLoading(true);
+                  try {
+                    const res = await fetch('/auth/demo-token');
+                    if (!res.ok) { setError('Demo login failed — is the API running?'); return; }
+                    const data = await res.json();
+                    sessionStorage.setItem('ta_token', data.access_token);
+                    onLogin(data.access_token);
+                  } catch {
+                    setError('Network error — is the API running?');
+                  } finally {
+                    setLoading(false);
+                  }
+                }}
+                style={loading ? { ...s.demoBtn, opacity: 0.6, cursor: 'not-allowed' } : s.demoBtn}
+                disabled={loading}
+              >
+                Preview Demo — no login required
               </button>
             </form>
           </div>
@@ -230,6 +258,20 @@ const s = {
     fontWeight: 500,
     letterSpacing: '2px',
     textTransform: 'uppercase',
+    marginTop: '4px',
+    transition: 'opacity 0.15s',
+  },
+  demoBtn: {
+    height: '40px',
+    backgroundColor: 'transparent',
+    color: 'var(--mid)',
+    border: '1px solid rgba(0,51,102,0.15)',
+    borderRadius: '8px',
+    cursor: 'pointer',
+    fontFamily: 'var(--fb)',
+    fontSize: '11px',
+    fontWeight: 400,
+    letterSpacing: '1px',
     marginTop: '4px',
     transition: 'opacity 0.15s',
   },

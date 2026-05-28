@@ -30,7 +30,10 @@ app = FastAPI(
     openapi_url="/openapi.json",
 )
 
-app.add_middleware(RateLimitMiddleware)
+# RateLimitMiddleware uses BaseHTTPMiddleware which consumes the request body
+# stream before FastAPI's form parser can read it, causing 422 on all POST
+# endpoints. Disabled until rewritten as pure ASGI middleware.
+# app.add_middleware(RateLimitMiddleware)
 
 app.add_middleware(
     CORSMiddleware,

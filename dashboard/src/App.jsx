@@ -32,18 +32,14 @@ export default function App() {
 
   // Authenticated fetch — clears token and forces re-login on 401
   const authFetch = useCallback(async (url, opts = {}) => {
-    const res = await fetch(url, {
-      ...opts,
-      headers: {
-        ...(opts.headers || {}),
-        Authorization: `Bearer ${authToken}`,
-      },
-    });
-    if (res.status === 401) {
-      handleLogout();
+    const headers = { ...(opts.headers || {}), Authorization: `Bearer ${authToken}` };
+    try {
+      const res = await fetch(url, { ...opts, headers });
+      if (res.status === 401) { handleLogout(); return null; }
+      return res;
+    } catch {
       return null;
     }
-    return res;
   }, [authToken]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // WS URL includes the JWT as a query param (browser WS API has no custom headers)

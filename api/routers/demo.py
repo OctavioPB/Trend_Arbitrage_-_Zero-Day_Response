@@ -14,10 +14,9 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 import psycopg2.extras
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter
 from pydantic import BaseModel
 
-from api.auth import require_scope
 from api.db import get_conn
 
 logger = logging.getLogger(__name__)
@@ -104,9 +103,7 @@ class ResetResponse(BaseModel):
 
 
 @router.post("/seed", response_model=SeedResponse)
-def seed_demo(
-    _subject: str = Depends(require_scope("write:alerts")),
-) -> SeedResponse:
+def seed_demo() -> SeedResponse:
     """Insert synthetic enriched_signals for 5 clusters and create golden records."""
     now = datetime.now(tz=timezone.utc)
     cluster_results: list[ClusterResult] = []
@@ -214,9 +211,7 @@ def seed_demo(
 
 
 @router.delete("/reset", response_model=ResetResponse)
-def reset_demo(
-    _subject: str = Depends(require_scope("write:alerts")),
-) -> ResetResponse:
+def reset_demo() -> ResetResponse:
     """Delete all rows from enriched_signals and golden_records."""
     with get_conn() as conn:
         with conn.cursor() as cur:

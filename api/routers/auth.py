@@ -8,15 +8,13 @@ DELETE /auth/keys/{id} — revoke an API key
 All key management endpoints require a valid JWT Bearer token.
 """
 
-from __future__ import annotations
-
 import logging
 from datetime import datetime, timedelta, timezone
 
 import psycopg2.extras
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel
+from starlette.requests import Request
 
 from api.auth import (
     ADMIN_PASSWORD,
@@ -70,26 +68,46 @@ class ApiKeyCreated(ApiKeyResponse):
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
 
+@router.get("/demo-token", response_model=TokenResponse)
+def demo_token() -> TokenResponse:
+    """Return a JWT with all scopes for demo/preview access. No credentials required."""
+    token = create_access_token(subject="demo", scopes=list(SCOPES.keys()))
+    return TokenResponse(access_token=token, expires_in=ACCESS_TOKEN_EXPIRE_MINUTES * 60)
+
+
 @router.post("/token", response_model=TokenResponse)
-def login(form_data: OAuth2PasswordRequestForm = Depends()) -> TokenResponse:
-    """Exchange admin credentials for a short-lived JWT access token."""
+async def login(request: Request) -> TokenResponse:
+    """Exchange admin credentials for a short-lived JWT access token.
+
+    Reads credentials via Starlette's request.form() to avoid a FastAPI +
+    Pydantic-v2 version interaction that breaks OAuth2PasswordRequestForm.
+    """
+    try:
+        form = await request.form()
+        username = str(form.get("username") or "")
+        password = str(form.get("password") or "")
+    except Exception as exc:
+        logger.warning("Form parse error: %s", exc)
+        username = password = ""
+
+    logger.info("Login attempt user=%r", username)
+
     if not ADMIN_PASSWORD:
         raise HTTPException(
             status_code=503,
             detail="API_ADMIN_PASSWORD is not configured on this server",
         )
-    if form_data.username != ADMIN_USER or form_data.password != ADMIN_PASSWORD:
+    if not username or not password:
+        raise HTTPException(status_code=400, detail="username and password are required")
+    if username != ADMIN_USER or password != ADMIN_PASSWORD:
         raise HTTPException(
             status_code=401,
             detail="Incorrect username or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    token = create_access_token(
-        subject=form_data.username,
-        scopes=list(SCOPES.keys()),
-    )
-    logger.info("Token issued for user=%r", form_data.username)
+    token = create_access_token(subject=username, scopes=list(SCOPES.keys()))
+    logger.info("Token issued for user=%r", username)
     return TokenResponse(
         access_token=token,
         expires_in=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
@@ -162,7 +180,7 @@ def create_api_key(
     return ApiKeyCreated(**resp.model_dump(), plain_key=plain_key)
 
 
-@router.delete("/keys/{key_id}", status_code=204)
+@router.delete("/keys/{key_id}", status_code=204, response_model=None)
 def revoke_api_key(
     key_id: str,
     _subject: str = Depends(require_scope("write:alerts")),

@@ -106,7 +106,7 @@ def create_alert_rule(
     return _to_response(rule)
 
 
-@router.delete("/{rule_id}", status_code=204)
+@router.delete("/{rule_id}", status_code=204, response_model=None)
 def delete_alert_rule(
     rule_id: str,
     _subject: str = Depends(require_scope("write:alerts")),

@@ -56,3 +56,6 @@ Thumbs.db
 
 # Docker volumes (if ever created locally)
 docker-volumes/
+
+# Personal launcher — not shared
+launch.ps1
